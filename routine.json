@@ -1,0 +1,19 @@
+{
+  "name": "Moog Audio · This Week's Picks (Tue & Fri draft)",
+  "cron_expression": "0 12 * * 2,5",
+  "enabled": false,
+  "mcp_connections": [
+    {"connector_uuid": "4611a9b4-2904-425d-9b81-fb32bf4dfb74", "name": "Shopify", "url": "https://setup.shopify.com/mcp"},
+    {"connector_uuid": "9dfc38f6-6f2a-484e-bf90-c16cd616e17a", "name": "Microsoft-365", "url": "https://microsoft365.mcp.claude.com/mcp"}
+  ],
+  "job_config": {"ccr": {
+    "environment_id": "env_01FMTu6CQEcJBZ25KuKM2mGA",
+    "session_context": {
+      "model": "claude-sonnet-5",
+      "sources": [{"git_repository": {"url": "https://github.com/igoraccebas/moog-newsletter-digest"}}],
+      "allowed_tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+    },
+    "events": [{"data": {"uuid": "3f9c2a7e-6b1d-4e58-9c2a-7d4f1b8e5a61", "session_id": "", "type": "user", "parent_tool_use_id": null,
+      "message": {"role": "user", "content": "SEE ROUTINE_PROMPT.md"}}}]
+  }}
+}
