@@ -14,6 +14,7 @@ query EventArticles { articles(first: 8, sortKey: PUBLISHED_AT, reverse: true, q
 query NewsArticles { articles(first: 2, sortKey: PUBLISHED_AT, reverse: true, query: "published_status:published AND blog_title:Blog") { nodes { id title handle publishedAt summary image { url } blog { handle title } } } }
 2c. Build out/extras.json: python3 -c "import json;e=json.load(open('out/events.json'))['data']['articles']['nodes'];n=json.load(open('out/news.json'))['data']['articles']['nodes'];json.dump({'blog':n,'events':e},open('out/extras.json','w'))"
 (The script fetches blog teasers from the public article pages itself.)
+After saving each JSON file, validate it: python3 -c "import json;json.load(open('out/<file>.json'))". If it fails with "Extra data", the save appended trailing text; trim everything after the final "}" and re-validate.
 If any tool result is reported as "too large" and saved to a file, do NOT read or copy that file (it lives under a protected path and will be blocked); instead re-run the query with a smaller "first" value, or drop the "body" field, and continue.
 
 STEP 3 - Render and publish the draft. Run: python3 digest.py store --from-json out/tagged.json --extras out/extras.json --publish

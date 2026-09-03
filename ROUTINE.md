@@ -19,5 +19,9 @@ ROUTINE_PROMPT.md). Summary of what it does each run:
 Routine id: trig_01EAWWLniMyjfL52YU9XfiCW. Test run 2026-09-03: clone + Shopify read OK; stopped
 correctly on "nothing tagged".
 
+Network: the cloud environment must allow outbound HTTPS to a.klaviyo.com (draft publish)
+and moogaudio.com (blog teasers). Test run 2026-09-03 16:36 UTC rendered fine but publish
+failed with "Tunnel connection failed: 403 Forbidden" until egress was opened.
+
 Required environment secret: KLAVIYO_API_KEY (private key, scopes: campaigns read/write,
 templates read/write).
