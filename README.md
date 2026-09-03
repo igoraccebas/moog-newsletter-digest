@@ -73,6 +73,9 @@ FREE SHIPPING | FLEXITI bar, category links, payment logos, Patch Rewards, socia
 Affirm legal) reuse the assets from the live weekly Klaviyo template. A 3px coral/mesh
 gradient stripe under the nav is the only promo accent.
 
+## Automation live — 2026-09-03
+Cloud routine enabled (see ROUTINE.md). First scheduled run: Friday 2026-09-04, 12:00 UTC.
+
 ## Trial run — 2026-09-03 (tag mode, real tags)
 Hero: Teenage Engineering EP-2350 FX (newsletter-hero). Rows: Denon Prime 4 G2, Pittsburgh
 SV-2, Death By Audio Amp Crash (newsletter). Blog: 2 latest news posts. Events: none upcoming

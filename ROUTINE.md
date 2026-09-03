@@ -16,8 +16,12 @@ ROUTINE_PROMPT.md). Summary of what it does each run:
    https://claude.ai/code/routines. The Microsoft 365 connector is read-only inside routines,
    so no email is sent from the run.
 
-Routine id: trig_01EAWWLniMyjfL52YU9XfiCW. Test run 2026-09-03: clone + Shopify read OK; stopped
-correctly on "nothing tagged".
+Routine id: trig_01EAWWLniMyjfL52YU9XfiCW — ENABLED 2026-09-03. Schedule: 0 12 * * 2,5 (UTC) =
+Tue & Fri 8am Toronto (7am after the November clock change).
+End-to-end test 2026-09-03 16:56 UTC: 5 tagged products -> Klaviyo Draft
+01M1M3BKBZF0TVZMYA572E5N5K created from the cloud, 5 tags removed, New Releases skipped (test
+override). Earlier attempts surfaced and fixed: oversized tool results (split article queries),
+egress blocked (env network allowlist), Klaviyo payload shape for revision 2024-10-15.
 
 Network: the cloud environment must allow outbound HTTPS to a.klaviyo.com (draft publish)
 and moogaudio.com (blog teasers). Test run 2026-09-03 16:36 UTC rendered fine but publish

@@ -1,7 +1,7 @@
 {
   "name": "Moog Audio · This Week's Picks (Tue & Fri draft)",
   "cron_expression": "0 12 * * 2,5",
-  "enabled": false,
+  "enabled": true,
   "mcp_connections": [
     {"connector_uuid": "4611a9b4-2904-425d-9b81-fb32bf4dfb74", "name": "Shopify", "url": "https://setup.shopify.com/mcp"},
     {"connector_uuid": "9dfc38f6-6f2a-484e-bf90-c16cd616e17a", "name": "Microsoft-365", "url": "https://microsoft365.mcp.claude.com/mcp"}
