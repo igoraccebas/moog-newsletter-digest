@@ -750,8 +750,7 @@ def publish_klaviyo(manifest, html_str, api_key):
             "audiences": {"included": AUDIENCES, "excluded": []},
             "send_strategy": {"method": "immediate"},
             "send_options": {"use_smart_sending": True},
-            "tracking_options": {"is_add_utm": False, "utm_params": [],
-                                 "is_tracking_clicks": True, "is_tracking_opens": True},
+            # tracking_options omitted on purpose: optional, and the account defaults apply
             "campaign-messages": {"data": [{"type": "campaign-message", "attributes": {
                 "channel": "email", "label": manifest["label"],
                 "content": {"subject": manifest["subject"], "preview_text": manifest["preview_text"],
