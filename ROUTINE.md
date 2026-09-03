@@ -1,7 +1,8 @@
 # Cloud routine — "This Week's Picks" (Tuesday & Friday, 8am Toronto)
 
-The routine (claude.ai/code → Routines) clones this repo and follows the prompt stored in
-the routine config. Summary of what it does each run:
+The routine (claude.ai/code → Routines) has no linked repository; its first step clones this
+public repo with plain git, then follows the prompt stored in the routine config (copy in
+ROUTINE_PROMPT.md). Summary of what it does each run:
 
 1. Shopify connector → Admin GraphQL: products tagged `newsletter` or `newsletter-hero`
    → save raw response to out/tagged.json. Nothing tagged → report and stop.

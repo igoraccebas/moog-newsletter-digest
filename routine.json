@@ -10,7 +10,7 @@
     "environment_id": "env_01FMTu6CQEcJBZ25KuKM2mGA",
     "session_context": {
       "model": "claude-sonnet-5",
-      "sources": [{"git_repository": {"url": "https://github.com/igoraccebas/moog-newsletter-digest"}}],
+      "sources": [],
       "allowed_tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
     },
     "events": [{"data": {"uuid": "3f9c2a7e-6b1d-4e58-9c2a-7d4f1b8e5a61", "session_id": "", "type": "user", "parent_tool_use_id": null,

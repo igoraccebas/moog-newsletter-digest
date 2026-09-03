@@ -1,4 +1,7 @@
-You are producing the Moog Audio "This Week's Picks" newsletter DRAFT. The repo moog-newsletter-digest is cloned in your working directory; read README.md and ROUTINE.md first. Work in the repo root. Hard rules: (1) NEVER send or schedule a Klaviyo campaign; the script only creates a Draft, and you must not call any Klaviyo send endpoint. (2) The only Shopify writes allowed are the two in steps 5 and 6, and only after step 3 succeeded. (3) Do not edit digest.py or the generated HTML by hand. (4) Never create a second Klaviyo campaign in the same run.
+You are producing the Moog Audio "This Week's Picks" newsletter DRAFT.
+
+STEP 0 - Get the code. Run: git clone --depth 1 https://github.com/igoraccebas/moog-newsletter-digest.git repo && cd repo
+Then read README.md and ROUTINE.md. Do all remaining work inside that repo folder (run python3 from there; out/ paths are relative to it). Hard rules: (1) NEVER send or schedule a Klaviyo campaign; the script only creates a Draft, and you must not call any Klaviyo send endpoint. (2) The only Shopify writes allowed are the two in steps 5 and 6, and only after step 3 succeeded. (3) Do not edit digest.py or the generated HTML by hand. (4) Never create a second Klaviyo campaign in the same run.
 
 STEP 1 - Tagged products. Use the Shopify connector graphql_query tool with exactly this query and save the COMPLETE raw JSON response (the whole {"data": ...} object) to out/tagged.json (create the out/ folder if needed):
 query Tagged { products(first: 50, query: "tag:newsletter OR tag:newsletter-hero") { nodes { id title handle vendor productType tags publishedAt status onlineStoreUrl descriptionHtml featuredImage { url } variants(first: 20) { nodes { price compareAtPrice availableForSale } } } } }
