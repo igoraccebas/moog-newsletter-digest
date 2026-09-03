@@ -164,8 +164,31 @@ DATE_RE = re.compile(r"\b(?:(\d{1,2})(?:st|nd|rd|th)?\s+)?([A-Za-zéû]{3,9})\.?
 TIME_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|h)\b", re.I)
 
 
+META_DESC_RE = re.compile(r'<meta[^>]+(?:property="og:description"|name="description")[^>]+content="([^"]*)"', re.I)
+_META_CACHE = {}
+
+
+def fetch_meta_description(url):
+    """Teaser from the public article page (<meta og:description>). Fails soft to ''."""
+    if url in _META_CACHE:
+        return _META_CACHE[url]
+    text = ""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "MoogDigest/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            head = r.read(200_000).decode("utf-8", errors="replace")
+        m = META_DESC_RE.search(head)
+        text = html.unescape(m.group(1)).strip() if m else ""
+    except Exception:
+        text = ""
+    _META_CACHE[url] = text
+    return text
+
+
 def article_teaser(node, limit=110):
     text = (node.get("summary") or "").strip() or excerpt(node.get("body") or "", node["title"], limit=limit, min_len=80)
+    if not text:
+        text = fetch_meta_description(article_url(node))
     text = re.sub(r"\s+", " ", TAG_RE.sub(" ", html.unescape(text))).strip()
     return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
