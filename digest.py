@@ -725,35 +725,47 @@ def subject_for(dept, cards):
 
 
 def publish_klaviyo(manifest, html_str, api_key):
-    """Create template + DRAFT campaign + attach template. Returns dict with ids/url. Never sends."""
+    """Create template + DRAFT campaign + attach template (Klaviyo revision 2024-10-15 shapes).
+    Returns dict with ids/url. Never sends. If the campaign step fails, the just-created
+    template is deleted so no orphan is left behind."""
     headers = {"Authorization": f"Klaviyo-API-Key {api_key}", "revision": KLAVIYO_REVISION,
                "accept": "application/json", "content-type": "application/json"}
 
-    def post(path, body):
-        req = urllib.request.Request(KLAVIYO_API + path, data=json.dumps(body).encode(), headers=headers, method="POST")
+    def call(method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(KLAVIYO_API + path, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
-                return json.load(r)
+                raw = r.read()
+                return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"Klaviyo {path} -> HTTP {e.code}: {e.read().decode(errors='replace')[:800]}")
+            raise RuntimeError(f"Klaviyo {method} {path} -> HTTP {e.code}: {e.read().decode(errors='replace')[:800]}")
 
-    t = post("templates", {"data": {"type": "template", "attributes": {
+    t = call("POST", "templates", {"data": {"type": "template", "attributes": {
         "name": f"{manifest['campaign_name']} (auto-digest)", "editor_type": "CODE", "html": html_str}}})
     template_id = t["data"]["id"]
-    c = post("campaigns", {"data": {"type": "campaign", "attributes": {
-        "name": f"{manifest['campaign_name']} (auto-digest DRAFT)",
-        "audiences": {"included": AUDIENCES, "excluded": []},
-        "send_strategy": {"method": "immediate"},
-        "send_options": {"use_smart_sending": True},
-        "tracking_options": {"is_tracking_opens": True, "is_tracking_clicks": True, "add_tracking_params": False},
-        "campaign-messages": {"data": [{"type": "campaign-message", "attributes": {"definition": {
-            "channel": "email", "label": manifest["label"],
-            "content": {"subject": manifest["subject"], "preview_text": manifest["preview_text"],
-                        "from_email": FROM_EMAIL, "from_label": FROM_LABEL}}}}]}}}})
-    campaign_id = c["data"]["id"]
-    message_id = c["data"]["relationships"]["campaign-messages"]["data"][0]["id"]
-    post("campaign-message-assign-template", {"data": {"type": "campaign-message", "id": message_id,
-         "relationships": {"template": {"data": {"type": "template", "id": template_id}}}}})
+    try:
+        c = call("POST", "campaigns", {"data": {"type": "campaign", "attributes": {
+            "name": f"{manifest['campaign_name']} (auto-digest DRAFT)",
+            "audiences": {"included": AUDIENCES, "excluded": []},
+            "send_strategy": {"method": "immediate"},
+            "send_options": {"use_smart_sending": True},
+            "tracking_options": {"is_add_utm": False, "utm_params": [],
+                                 "is_tracking_clicks": True, "is_tracking_opens": True},
+            "campaign-messages": {"data": [{"type": "campaign-message", "attributes": {
+                "channel": "email", "label": manifest["label"],
+                "content": {"subject": manifest["subject"], "preview_text": manifest["preview_text"],
+                            "from_email": FROM_EMAIL, "from_label": FROM_LABEL}}}]}}}})
+        campaign_id = c["data"]["id"]
+        message_id = c["data"]["relationships"]["campaign-messages"]["data"][0]["id"]
+        call("POST", "campaign-message-assign-template", {"data": {"type": "campaign-message", "id": message_id,
+             "relationships": {"template": {"data": {"type": "template", "id": template_id}}}}})
+    except Exception:
+        try:
+            call("DELETE", f"templates/{template_id}")
+        except Exception:
+            pass
+        raise
     return {"template_id": template_id, "campaign_id": campaign_id, "message_id": message_id,
             "status": c["data"]["attributes"].get("status", "Draft"),
             "campaign_url": f"https://www.klaviyo.com/campaign/{campaign_id}/wizard"}
