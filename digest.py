@@ -189,6 +189,14 @@ def article_teaser(node, limit=110):
     text = (node.get("summary") or "").strip() or excerpt(node.get("body") or "", node["title"], limit=limit, min_len=80)
     if not text:
         text = fetch_meta_description(article_url(node))
+        # Shopify's page description = title + headings + first words; keep just the prose part.
+        t = node["title"].strip()
+        if text.lower().startswith(t.lower()):
+            text = text[len(t):].strip(" :-–|")
+        if "Introduction" in text:
+            text = text.split("Introduction", 1)[1].strip()
+        elif "?" in text[:120]:
+            text = text.split("?", 1)[1].strip()
     text = re.sub(r"\s+", " ", TAG_RE.sub(" ", html.unescape(text))).strip()
     return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
