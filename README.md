@@ -64,6 +64,12 @@ Sender: Moog Audio <nouvelles@moogaudio.com>.
 
 Flags: `--days N` widens the publish window (first run / catch-up), `--dry-run` skips state.
 
+## Hero background rotation
+The "Pick of the Week" block rotates through five gradients (peach-coral, gold-amber,
+blush-rose, sage-mint, slate-ice), chosen from the run date so consecutive Tuesday/Friday runs
+never repeat and the cycle restarts every five runs. Each has a solid fallback for Outlook.
+Force one with `--hero-style <name>`; the manifest records `hero_style`.
+
 ## Design
 
 Follows the Moog Audio design system: black/white, Helvetica, 0px radius, 1px #dcdcdc

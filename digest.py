@@ -66,6 +66,30 @@ TAG_HERO = "newsletter-hero"  # marks the single "Pick of the Week" hero
 BLOG_URL, EVENTS_URL = "/blogs/news", "/blogs/events"
 # Every product that goes into the email is also added to this manual collection (Admin collectionAddProducts)
 NEW_RELEASES_COLLECTION = {"handle": "newreleases", "id": "gid://shopify/Collection/306490671293"}
+# Hero background rotation. Each variant: solid fallback (Outlook) + gradient. Black type on all.
+HERO_GRADIENTS = [
+    {"name": "peach-coral", "solid": "#f86726", "gradient": "linear-gradient(115deg,#fdbb8f 0%,#f86726 38%,#eabf7c 68%,#ffe2d8 100%)"},
+    {"name": "gold-amber",  "solid": "#e0a526", "gradient": "linear-gradient(115deg,#ffe08a 0%,#e0a526 40%,#f2c76b 70%,#fff1c9 100%)"},
+    {"name": "blush-rose",  "solid": "#e8687a", "gradient": "linear-gradient(115deg,#ffc4cf 0%,#e8687a 40%,#f4a0ad 70%,#ffe6ea 100%)"},
+    {"name": "sage-mint",   "solid": "#7fb59a", "gradient": "linear-gradient(115deg,#cfe9d9 0%,#7fb59a 40%,#a9d3bf 70%,#eaf6ef 100%)"},
+    {"name": "slate-ice",   "solid": "#8aa4c8", "gradient": "linear-gradient(115deg,#d6e2f5 0%,#8aa4c8 40%,#b3c6e3 70%,#eef3fb 100%)"},
+]
+HERO_EPOCH = dt.date(2026, 8, 31)   # a Monday; run slots are Tue (0) and Fri (1) of each week
+
+
+def pick_hero_style(day=None, name=None):
+    """Deterministic rotation: consecutive Tue/Fri runs walk through HERO_GRADIENTS in order."""
+    if name:
+        for g in HERO_GRADIENTS:
+            if g["name"] == name:
+                return g
+        raise SystemExit(f"unknown hero style {name!r}; choose from {[g['name'] for g in HERO_GRADIENTS]}")
+    day = day or dt.date.today()
+    weeks = (day - HERO_EPOCH).days // 7
+    slot = 0 if day.weekday() <= 3 else 1          # Mon-Thu -> Tuesday slot, Fri-Sun -> Friday slot
+    return HERO_GRADIENTS[(weeks * 2 + slot) % len(HERO_GRADIENTS)]
+
+
 MOBILE_CSS = ("@media only screen and (max-width:480px){ .stack{display:block!important;width:100%!important;"
               "padding-right:0!important;} .stack-img{padding-bottom:14px!important;} "
               ".stack-img img{width:100%!important;max-width:320px!important;margin:0 auto;} }")
@@ -481,7 +505,8 @@ def render(dept, cards, week_label):
 </body></html>"""
 
 
-def render_picks(cards, hero, extras, week_label):
+def render_picks(cards, hero, extras, week_label, style=None):
+    style = style or HERO_GRADIENTS[0]
     d = DEPARTMENTS["store"]
     utm = "utm_source=klaviyo&utm_medium=email&utm_campaign=new-store-digest"
     def link(path):
@@ -506,7 +531,7 @@ def render_picks(cards, hero, extras, week_label):
         url = hero["url"] + "?" + utm
         blurb = excerpt_long = hero.get("excerpt_long") or hero.get("excerpt") or ""
         hero_html = f"""
-  <tr><td bgcolor="{CORAL}" style="background-color:{CORAL};background-image:linear-gradient(115deg,#fdbb8f 0%,#f86726 38%,#eabf7c 68%,#ffe2d8 100%);padding:32px 24px">
+  <tr><td bgcolor="{style['solid']}" style="background-color:{style['solid']};background-image:{style['gradient']};padding:32px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%">
       <tr><td style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
       <tr><td align="center" style="padding-bottom:18px;background:{WHITE};border:1px solid {BLACK}">
@@ -778,6 +803,8 @@ def main():
     ap.add_argument("--from-json", metavar="FILE", help="render from a saved Shopify Admin GraphQL response (tag mode)")
     ap.add_argument("--extras", metavar="FILE", help='store mode: {"blog": [...articles], "events": [...articles]}')
     ap.add_argument("--publish", action="store_true", help="create the Klaviyo DRAFT campaign (needs KLAVIYO_API_KEY env var)")
+    ap.add_argument("--hero-style", metavar="NAME", help="force a hero background (default: rotate by date): "
+                    + ", ".join(g["name"] for g in HERO_GRADIENTS))
     a = ap.parse_args()
     d = DEPARTMENTS[a.dept]
     now = dt.datetime.now(dt.timezone.utc)
@@ -828,6 +855,7 @@ def main():
         print("Nothing to announce. No file written.")
         return 0
     extras = load_extras(a.extras) if a.dept == "store" else {"blog": [], "events": []}
+    hero_style = pick_hero_style(now.date(), a.hero_style)
 
     week_label = now.astimezone(dt.timezone(dt.timedelta(hours=-4))).strftime("Week of %b %-d")
     subject = subject_for(a.dept, ([hero] if hero else []) + cards) if a.dept != "store" or not hero else \
@@ -840,7 +868,7 @@ def main():
     stamp = now.strftime("%Y-%m-%d")
     html_path = OUT / f"{a.dept}-{stamp}.html"
     json_path = OUT / f"{a.dept}-{stamp}.json"
-    html_path.write_text(render_picks(cards, hero, extras, week_label) if a.dept == "store" else render(a.dept, cards, week_label))
+    html_path.write_text(render_picks(cards, hero, extras, week_label, hero_style) if a.dept == "store" else render(a.dept, cards, week_label))
     json_path.write_text(json.dumps({
         "dept": a.dept, "label": d["label"], "generated_at": now.isoformat(), "window_days": a.days,
         "subject": subject, "preview_text": preview, "label": d.get("title") or f"New in {d['label']}",
@@ -851,7 +879,7 @@ def main():
         "add_to_collection": {**NEW_RELEASES_COLLECTION,
                               "product_ids": ([i for i in hero.get("admin_ids", [])] if hero else [])
                                              + [i for c in cards for i in c.get("admin_ids", [])]} if a.dept == "store" else None,
-        "hero": hero, "cards": cards,
+        "hero_style": hero_style["name"], "hero": hero, "cards": cards,
         "blog": [{"title": x["title"], "url": article_url(x)} for x in extras["blog"][:2]],
         "events": [{"title": x["title"], "url": article_url(x), "when": event_when(x)} for x in extras["events"][:3]],
     }, indent=2))
@@ -877,7 +905,7 @@ def main():
 
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
     if hero:
-        print(f"  HERO {hero['vendor']} | {hero['title']} | {hero['price']}")
+        print(f"  HERO {hero['vendor']} | {hero['title']} | {hero['price']}  [background: {hero_style['name']}]")
     for c in cards:
         print(f"  - {c['vendor']} | {c['title']} | {c['price']}" + (f" | {len(c['variants'])} options" if c['variants'] else ""))
     if extras["blog"]:
