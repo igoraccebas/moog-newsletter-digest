@@ -66,13 +66,15 @@ TAG_HERO = "newsletter-hero"  # marks the single "Pick of the Week" hero
 BLOG_URL, EVENTS_URL = "/blogs/news", "/blogs/events"
 # Every product that goes into the email is also added to this manual collection (Admin collectionAddProducts)
 NEW_RELEASES_COLLECTION = {"handle": "newreleases", "id": "gid://shopify/Collection/306490671293"}
-# Hero background rotation. Each variant: solid fallback (Outlook) + gradient. Black type on all.
+# Hero background rotation. Each variant: solid fallback (classic Outlook), a hosted PNG of the
+# gradient (Klaviyo CDN; renders in Gmail/Apple Mail/Outlook.com/Android which ignore CSS gradients)
+# and the CSS gradient itself. Source PNGs live in assets/. Black type on all.
 HERO_GRADIENTS = [
-    {"name": "peach-coral", "solid": "#f86726", "gradient": "linear-gradient(115deg,#fdbb8f 0%,#f86726 38%,#eabf7c 68%,#ffe2d8 100%)"},
-    {"name": "gold-amber",  "solid": "#e0a526", "gradient": "linear-gradient(115deg,#ffe08a 0%,#e0a526 40%,#f2c76b 70%,#fff1c9 100%)"},
-    {"name": "blush-rose",  "solid": "#e8687a", "gradient": "linear-gradient(115deg,#ffc4cf 0%,#e8687a 40%,#f4a0ad 70%,#ffe6ea 100%)"},
-    {"name": "sage-mint",   "solid": "#7fb59a", "gradient": "linear-gradient(115deg,#cfe9d9 0%,#7fb59a 40%,#a9d3bf 70%,#eaf6ef 100%)"},
-    {"name": "slate-ice",   "solid": "#8aa4c8", "gradient": "linear-gradient(115deg,#d6e2f5 0%,#8aa4c8 40%,#b3c6e3 70%,#eef3fb 100%)"},
+    {"name": "peach-coral", "image": "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/0e501c8e-d710-4c87-b48b-96540da6fe8e.png", "solid": "#f86726", "gradient": "linear-gradient(115deg,#fdbb8f 0%,#f86726 38%,#eabf7c 68%,#ffe2d8 100%)"},
+    {"name": "gold-amber", "image": "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/f7372c2a-403e-4a5b-b8e6-d3cbe698ec39.png",  "solid": "#e0a526", "gradient": "linear-gradient(115deg,#ffe08a 0%,#e0a526 40%,#f2c76b 70%,#fff1c9 100%)"},
+    {"name": "blush-rose", "image": "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/5948a0b7-ce37-4abd-8a5e-6b552762552f.png",  "solid": "#e8687a", "gradient": "linear-gradient(115deg,#ffc4cf 0%,#e8687a 40%,#f4a0ad 70%,#ffe6ea 100%)"},
+    {"name": "sage-mint", "image": "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/d9c1de40-a3a4-4d86-95fb-3996cd7f0402.png",   "solid": "#7fb59a", "gradient": "linear-gradient(115deg,#cfe9d9 0%,#7fb59a 40%,#a9d3bf 70%,#eaf6ef 100%)"},
+    {"name": "slate-ice", "image": "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/44afa799-9a24-4bb7-b6c0-4dd91552a975.png",   "solid": "#8aa4c8", "gradient": "linear-gradient(115deg,#d6e2f5 0%,#8aa4c8 40%,#b3c6e3 70%,#eef3fb 100%)"},
 ]
 HERO_EPOCH = dt.date(2026, 8, 31)   # a Monday; run slots are Tue (0) and Fri (1) of each week
 
@@ -531,7 +533,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
         url = hero["url"] + "?" + utm
         blurb = excerpt_long = hero.get("excerpt_long") or hero.get("excerpt") or ""
         hero_html = f"""
-  <tr><td bgcolor="{style['solid']}" style="background-color:{style['solid']};background-image:{style['gradient']};padding:32px 24px">
+  <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:32px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%">
       <tr><td style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
       <tr><td align="center" style="padding-bottom:18px;background:{WHITE};border:1px solid {BLACK}">
