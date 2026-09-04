@@ -74,7 +74,7 @@ Affirm legal) reuse the assets from the live weekly Klaviyo template. A 3px cora
 gradient stripe under the nav is the only promo accent.
 
 ## Automation live — 2026-09-03
-Cloud routine enabled (see ROUTINE.md). First scheduled run: Friday 2026-09-04, 12:00 UTC.
+Cloud routine enabled (see ROUTINE.md). First scheduled run 2026-09-04 succeeded (draft 01M1NV126ZW3YPWHP13HTAFTBH). Schedule moved to 13:00 UTC = 9am Toronto.
 
 ## Trial run — 2026-09-03 (tag mode, real tags)
 Hero: Teenage Engineering EP-2350 FX (newsletter-hero). Rows: Denon Prime 4 G2, Pittsburgh

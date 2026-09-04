@@ -1,4 +1,4 @@
-# Cloud routine — "This Week's Picks" (Tuesday & Friday, 8am Toronto)
+# Cloud routine — "This Week's Picks" (Tuesday & Friday, 9am Toronto)
 
 The routine (claude.ai/code → Routines) has no linked repository; its first step clones this
 public repo with plain git, then follows the prompt stored in the routine config (copy in
@@ -16,8 +16,10 @@ ROUTINE_PROMPT.md). Summary of what it does each run:
    https://claude.ai/code/routines. The Microsoft 365 connector is read-only inside routines,
    so no email is sent from the run.
 
-Routine id: trig_01EAWWLniMyjfL52YU9XfiCW — ENABLED 2026-09-03. Schedule: 0 12 * * 2,5 (UTC) =
-Tue & Fri 8am Toronto (7am after the November clock change).
+Routine id: trig_01EAWWLniMyjfL52YU9XfiCW — ENABLED 2026-09-03. Schedule: 0 13 * * 2,5 (UTC) =
+Tue & Fri 9am Toronto (8am after the November clock change). The cron is UTC: saving the
+routine from the claude.ai web form can rewrite it (on 2026-09-03 it became 0 09 UTC = 5am
+Toronto), so after any UI edit re-check the cron here or via the API.
 End-to-end test 2026-09-03 16:56 UTC: 5 tagged products -> Klaviyo Draft
 01M1M3BKBZF0TVZMYA572E5N5K created from the cloud, 5 tags removed, New Releases skipped (test
 override). Earlier attempts surfaced and fixed: oversized tool results (split article queries),
