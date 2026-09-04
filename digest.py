@@ -549,10 +549,10 @@ def render_picks(cards, hero, extras, week_label, style=None):
         blurb = excerpt_long = hero.get("excerpt_long") or hero.get("excerpt") or ""
         hero_html = f"""
   <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:32px 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">
       <tr><td class="m-label" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
       <tr><td align="center" style="padding-bottom:18px;background:{WHITE};border:1px solid {BLACK}">
-        <a href="{url}" style="display:block;padding:18px 0 0 0"><img src="{hero['image']}&width=800" width="400" alt="{esc(hero['title'])}" style="display:block;width:400px;max-width:100%;height:auto;border:0;margin:0 auto"></a>
+        <a href="{url}" style="display:block;padding:18px 0 0 0"><img src="{hero['image']}&width=800" width="400" alt="{esc(hero['title'])}" style="display:block;width:100%;max-width:400px;height:auto;border:0;margin:0 auto"></a>
       </td></tr>
       <tr><td class="m-label" style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
       <tr><td class="m-hero-title" style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}">{esc(hero['title'])}</td></tr>
@@ -574,7 +574,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
                     if c["variants"] else "")
         return f"""
       <tr><td style="padding:22px 0{border}">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           <td class="stack stack-img" width="200" valign="top" style="width:200px;padding-right:20px">
             <a href="{url}"><img src="{c['image']}&width=400" width="200" alt="{esc(c['title'])}" style="display:block;width:200px;max-width:100%;height:auto;border:0;background:{WHITE}"></a>
           </td>
@@ -594,20 +594,20 @@ def render_picks(cards, hero, extras, week_label, style=None):
         rows = "".join(row_html(c, i == len(cards) - 1) for i, c in enumerate(cards))
         list_html = f"""
   <tr><td style="padding:30px 24px 0 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td class="m-section" style="font-size:18px;font-weight:bold;color:{BLACK}">{list_title}</td>
       <td align="right" class="m-label" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{link('/collections/newreleases')}" style="color:{BLACK};text-decoration:underline">VIEW ALL</a></td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%">{rows}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">{rows}
     </table>
   </td></tr>"""
 
     def section_head(title, link_text, href, pad_top=32):
         return f"""
   <tr><td style="padding:{pad_top}px 24px 8px 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td class="m-section" style="font-size:18px;font-weight:bold;color:{BLACK}">{title}</td>
       <td align="right" class="m-label" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{href}" style="color:{BLACK};text-decoration:underline">{link_text}</a></td>
     </tr></table>
@@ -633,7 +633,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
         cells = "".join(post_cell(a, i == len(posts) - 1) for i, a in enumerate(posts))
         blog_html = section_head("From the Blog", "ALL POSTS", link(BLOG_URL)) + f"""
   <tr><td style="padding:16px 24px 12px 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>{cells}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{cells}
     </tr></table>
   </td></tr>"""
 
@@ -649,7 +649,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
             top = f"border-top:1px solid {HAIRLINE};" if first else ""
             return f"""
       <tr><td style="padding:14px 0;{top}border-bottom:1px solid {HAIRLINE}">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           {when_cell}
           <td valign="top">
             <div class="m-title" style="font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></div>
@@ -661,7 +661,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
         rows = "".join(event_row(a, i == 0) for i, a in enumerate(events))
         events_html = section_head("Upcoming Events", "ALL EVENTS", link(EVENTS_URL), pad_top=24) + f"""
   <tr><td style="padding:16px 24px 12px 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%">{rows}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">{rows}
     </table>
   </td></tr>"""
 
@@ -690,11 +690,11 @@ def render_picks(cards, hero, extras, week_label, style=None):
 <body style="margin:0;padding:0;background:#ececec;-webkit-text-size-adjust:100%;">
 <div style="background:#ececec;padding:24px 0;font-family:Helvetica,Arial,sans-serif">
 <span style="display:none;font-size:1px;color:#ececec;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden">{esc(preheader)}</span>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" align="center" style="width:600px;margin:0 auto;background:{WHITE}">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" style="width:100%;max-width:600px;margin:0 auto;background:{WHITE}">
   <tr><td align="center" style="padding:10px 0 4px 0;font-size:10px;color:{GREY_TXT}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
   <tr><td align="center" style="padding:6px 0 14px 0"><a href="{link('/')}"><img src="{LOGO}" width="600" alt="Moog Audio" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
   <tr><td bgcolor="{BLACK}" style="background:{BLACK}">
-    <table role="presentation" class="m-nav" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%"><tr>{nav_cells}</tr></table>
+    <table role="presentation" class="m-nav" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{nav_cells}</tr></table>
   </td></tr>
   <tr><td height="3" style="height:3px;line-height:3px;font-size:0;background:{CORAL};background-image:linear-gradient(90deg,#fdbb8f 0%,#f86726 35%,#eabf7c 65%,#ffe2d8 85%,#d5ddda 100%)">&nbsp;</td></tr>
   <tr><td align="center" class="m-small" style="padding:14px 20px;font-size:12px;color:{BLACK};border-bottom:1px solid {HAIRLINE}"><strong>FREE SHIPPING</strong> on most orders over 199$ | <strong>FLEXITI</strong> financing available at checkout</td></tr>
@@ -709,13 +709,13 @@ def render_picks(cards, hero, extras, week_label, style=None):
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%;border-top:1px solid {HAIRLINE}">{cat_rows}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-top:1px solid {HAIRLINE}">{cat_rows}
     </table>
   </td></tr>{blog_html}{events_html}
   <tr><td style="padding:12px 24px 8px 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td bgcolor="{BLACK}" style="background:{BLACK};padding:24px">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="504" style="width:100%"><tr>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           <td class="stack m-body" style="font-size:14px;line-height:20px;color:{WHITE};padding-right:16px"><span style="font-weight:bold">Visit the Boutique.</span> Try the gear in person &mdash; 3828 St Laurent Blvd, Montreal.</td>
           <td align="right" width="140">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right"><tr>
@@ -727,7 +727,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
     </tr></table>
   </td></tr>
   <tr><td style="padding:16px 24px 0 24px;border-bottom:1px solid {HAIRLINE}">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td class="stack m-small" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-right:16px;padding-bottom:16px"><span style="font-weight:bold">Free shipping.</span> We offer Free Shipping on most orders over 199$. Conditions may apply.</td>
       <td class="stack m-small" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-bottom:16px"><span style="font-weight:bold">Rewards.</span> For each dollar spent, earn one reward point which you can use as a discount for your future purchases.</td>
     </tr></table>
@@ -742,7 +742,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
   <tr><td class="m-legal" style="padding:8px 24px 16px 24px;font-size:11px;line-height:16px;color:{GREY_TXT};text-align:justify">{esc(AFFIRM_LEGAL)}</td></tr>
   <tr><td align="center" class="m-small" style="padding:6px 24px 32px 24px;font-size:12px;line-height:18px;color:{BLACK}">No longer want to receive these emails? <a href="{{% manage_preferences_link %}}" style="color:{BLACK};text-decoration:underline">Manage Preferences</a> | <a href="{{% unsubscribe_link %}}" style="color:{BLACK};text-decoration:underline">Unsubscribe</a></td></tr>
 </table>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" align="center" style="width:600px;margin:0 auto"><tr><td height="24" style="font-size:1px;line-height:1px">&nbsp;</td></tr></table>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" style="width:100%;max-width:600px;margin:0 auto"><tr><td height="24" style="font-size:1px;line-height:1px">&nbsp;</td></tr></table>
 </div>
 </body>
 </html>"""
