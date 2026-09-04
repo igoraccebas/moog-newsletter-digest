@@ -671,9 +671,11 @@ def render_picks(cards, hero, extras, week_label, style=None):
     cat_rows = "".join(
         f'<tr><td align="center" class="m-body" style="padding:9px 0;border-bottom:1px solid {HAIRLINE}"><a href="{link(p)}" style="color:#c1c1c1;font-size:14px;font-weight:700;letter-spacing:2px;text-decoration:none">{t}</a></td></tr>'
         for t, p in CATEGORY_LINKS)
-    social = "".join(
-        f'<a href="{u}" style="display:inline-block;margin:0 7px"><img src="{img}" width="25" height="25" alt="{a}" style="display:block;border:0"></a>'
-        for u, img, a in SOCIAL)
+    social = ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>'
+              + "".join(f'<td align="center" valign="middle" style="padding:0 7px;line-height:0;font-size:0"><a href="{u}" style="text-decoration:none;display:block;line-height:0">'
+                        f'<img src="{img}" width="25" height="25" alt="{a}" style="display:block;border:0;width:25px;height:25px"></a></td>'
+                        for u, img, a in SOCIAL)
+              + '</tr></table>')
     intro = f"{n} new {'pick' if n == 1 else 'picks'} from across the store, chosen by the team. Here's what's worth a look this week."
 
     return f"""<!DOCTYPE html>
@@ -734,7 +736,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
   </td></tr>
   <tr><td align="center" style="padding:28px 0 6px 0"><img src="{IMG_PAYMENTS}" width="600" alt="Affirm, Flexiti and PayPlan by RBC financing" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr>
   <tr><td align="center" style="padding:6px 0 10px 0"><a href="{link('/pages/reward')}"><img src="{IMG_REWARDS}" width="600" alt="Patch Rewards: earn points every time you shop, connect and review" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
-  <tr><td align="center" style="padding:10px 0 22px 0">{social}</td></tr>
+  <tr><td align="center" style="padding:10px 0 22px 0;line-height:0;font-size:0">{social}</td></tr>
   <tr><td align="center" class="m-small" style="padding:0 24px 12px 24px;font-size:13px;line-height:19px;color:{BLACK}">
     <a href="{link('/')}" style="color:{BLACK};font-weight:700;text-decoration:underline">moogaudio.com</a><br>
     <a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" style="color:{BLACK};text-decoration:underline">{ADDRESS}</a>
