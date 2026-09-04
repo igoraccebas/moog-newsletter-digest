@@ -716,10 +716,10 @@ def render_picks(cards, hero, extras, week_label, style=None):
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td bgcolor="{BLACK}" style="background:{BLACK};padding:24px">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
-          <td class="stack m-body" style="font-size:14px;line-height:20px;color:{WHITE};padding-right:16px"><span style="font-weight:bold">Visit the Boutique.</span> Try the gear in person &mdash; 3828 St Laurent Blvd, Montreal.</td>
-          <td align="right" width="140">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right"><tr>
-              <td style="border:1px solid {WHITE}"><a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" style="display:block;padding:10px 20px;font-size:11px;font-weight:bold;letter-spacing:1px;color:{WHITE};text-decoration:none">GET DIRECTIONS</a></td>
+          <td class="stack stack-img m-body" style="font-size:14px;line-height:20px;color:{WHITE};padding-right:16px"><span style="font-weight:bold">Visit the Boutique.</span> Try the gear in person &mdash; 3828 St Laurent Blvd, Montreal.</td>
+          <td align="right" width="140" class="stack" style="padding-top:0">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right" class="stack"><tr>
+              <td style="border:1px solid {WHITE}"><a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" class="m-label" style="display:block;padding:10px 20px;font-size:11px;font-weight:bold;letter-spacing:1px;color:{WHITE};text-decoration:none;text-align:center">GET DIRECTIONS</a></td>
             </tr></table>
           </td>
         </tr></table>
