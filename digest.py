@@ -109,6 +109,7 @@ MOBILE_CSS = (
     " .m-section{font-size:20px!important;}"
     " .m-small{font-size:14px!important;line-height:20px!important;}"
     " .m-legal{font-size:12px!important;line-height:17px!important;}"
+    " .m-full{width:100%!important;max-width:100%!important;height:auto!important;}"
     "}")
 # Noise rules (applied to every department). Tweak freely.
 EXCLUDE_TYPES = {"Parts"}
@@ -619,11 +620,11 @@ def render_picks(cards, hero, extras, week_label, style=None):
         def post_cell(a, last):
             img = (a.get("image") or {}).get("url")
             url = article_url(a) + "?" + utm
-            pic = (f'<a href="{url}"><img src="{img}&width=536" width="268" alt="{esc(a["title"])}" style="display:block;width:268px;max-width:100%;height:auto;border:0"></a>'
+            pic = (f'<a href="{url}"><img src="{img}&width=536" width="268" alt="{esc(a["title"])}" class="m-full" style="display:block;width:100%;max-width:268px;height:auto;border:0"></a>'
                    if img else f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="268"><tr><td height="140" bgcolor="#f4f4f4" style="background:#f4f4f4"></td></tr></table>')
             pad = "" if last else "padding-right:16px;"
             return f"""
-      <td class="stack{'' if last else ' stack-img'}" width="268" valign="top" style="width:268px;{pad}">
+      <td class="stack stack-img" width="268" valign="top" style="width:268px;{pad}">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="268" style="width:100%">
           <tr><td>{pic}</td></tr>
           <tr><td class="m-title" style="padding:12px 0 4px 0;font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></td></tr>
