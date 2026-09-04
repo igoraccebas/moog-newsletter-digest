@@ -64,6 +64,12 @@ Sender: Moog Audio <nouvelles@moogaudio.com>.
 
 Flags: `--days N` widens the publish window (first run / catch-up), `--dry-run` skips state.
 
+## Dark mode
+The email is locked to light: `<meta name="color-scheme" content="light">` (Apple Mail / iOS Mail
+stop inverting) plus Outlook `[data-ogsc]`/`[data-ogsb]` overrides on `.txt-*` / `.bg-*` classes.
+Gmail apps ignore both and may still invert; left alone on purpose to avoid white-on-white.
+Simulations of what unprotected dark mode looked like: out/dark-*-preview.jpeg (local only).
+
 ## Hero background rotation
 The "Pick of the Week" block rotates through five gradients (peach-coral, gold-amber,
 blush-rose, sage-mint, slate-ice), chosen from the run date so consecutive Tuesday/Friday runs
