@@ -92,9 +92,24 @@ def pick_hero_style(day=None, name=None):
     return HERO_GRADIENTS[(weeks * 2 + slot) % len(HERO_GRADIENTS)]
 
 
-MOBILE_CSS = ("@media only screen and (max-width:480px){ .stack{display:block!important;width:100%!important;"
-              "padding-right:0!important;} .stack-img{padding-bottom:14px!important;} "
-              ".stack-img img{width:100%!important;max-width:320px!important;margin:0 auto;} }")
+MOBILE_CSS = (
+    "@media only screen and (max-width:480px){"
+    " .stack{display:block!important;width:100%!important;padding-right:0!important;}"
+    " .stack-img{padding-bottom:14px!important;}"
+    " .stack-img img{width:100%!important;max-width:320px!important;margin:0 auto;}"
+    " .m-h1{font-size:30px!important;line-height:36px!important;}"
+    " .m-intro{font-size:17px!important;line-height:25px!important;}"
+    " .m-label{font-size:13px!important;line-height:18px!important;}"
+    " .m-nav a{font-size:13px!important;}"
+    " .m-hero-title{font-size:24px!important;line-height:30px!important;}"
+    " .m-title{font-size:19px!important;line-height:25px!important;}"
+    " .m-body{font-size:16px!important;line-height:24px!important;}"
+    " .m-price{font-size:17px!important;line-height:24px!important;}"
+    " .m-btn{font-size:14px!important;padding:14px 22px!important;}"
+    " .m-section{font-size:20px!important;}"
+    " .m-small{font-size:14px!important;line-height:20px!important;}"
+    " .m-legal{font-size:12px!important;line-height:17px!important;}"
+    "}")
 # Noise rules (applied to every department). Tweak freely.
 EXCLUDE_TYPES = {"Parts"}
 EXCLUDE_TITLE_RE = re.compile(r"\((part|parts)\)", re.I)
@@ -535,17 +550,17 @@ def render_picks(cards, hero, extras, week_label, style=None):
         hero_html = f"""
   <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:32px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%">
-      <tr><td style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
+      <tr><td class="m-label" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
       <tr><td align="center" style="padding-bottom:18px;background:{WHITE};border:1px solid {BLACK}">
         <a href="{url}" style="display:block;padding:18px 0 0 0"><img src="{hero['image']}&width=800" width="400" alt="{esc(hero['title'])}" style="display:block;width:400px;max-width:100%;height:auto;border:0;margin:0 auto"></a>
       </td></tr>
-      <tr><td style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
-      <tr><td style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}">{esc(hero['title'])}</td></tr>
-      {f'<tr><td style="padding-top:8px;font-size:13px;line-height:19px;color:{BLACK}">{esc(blurb)}</td></tr>' if blurb else ''}
-      <tr><td style="padding-top:10px;font-size:15px;color:{BLACK}">{price_html(hero, 15)}</td></tr>
+      <tr><td class="m-label" style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
+      <tr><td class="m-hero-title" style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}">{esc(hero['title'])}</td></tr>
+      {f'<tr><td class="m-body" style="padding-top:8px;font-size:14px;line-height:21px;color:{BLACK}">{esc(blurb)}</td></tr>' if blurb else ''}
+      <tr><td class="m-price" style="padding-top:10px;font-size:16px;color:{BLACK}">{price_html(hero, 15)}</td></tr>
       <tr><td style="padding-top:16px">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-          <td bgcolor="{BLACK}" style="background:{BLACK}"><a href="{url}" style="{btn}padding:12px 28px;">Shop Now</a></td>
+          <td bgcolor="{BLACK}" style="background:{BLACK}"><a href="{url}" class="m-btn" style="{btn}padding:12px 28px;">Shop Now</a></td>
         </tr></table>
       </td></tr>
     </table>
@@ -554,8 +569,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
     def row_html(c, last):
         url = c["url"] + "?" + utm
         border = "" if last else f";border-bottom:1px solid {HAIRLINE}"
-        blurb = f'<div style="font-size:13px;line-height:19px;color:{BLACK};margin-top:8px">{esc(c["excerpt"])}</div>' if c.get("excerpt") else ""
-        variants = (f'<div style="font-size:12px;color:{GREY_TXT};margin-top:4px">{len(c["variants"])} options: {esc(", ".join(c["variants"]))}</div>'
+        blurb = f'<div class="m-body" style="font-size:14px;line-height:21px;color:{BLACK};margin-top:8px">{esc(c["excerpt"])}</div>' if c.get("excerpt") else ""
+        variants = (f'<div class="m-small" style="font-size:12px;color:{GREY_TXT};margin-top:4px">{len(c["variants"])} options: {esc(", ".join(c["variants"]))}</div>'
                     if c["variants"] else "")
         return f"""
       <tr><td style="padding:22px 0{border}">
@@ -564,11 +579,11 @@ def render_picks(cards, hero, extras, week_label, style=None):
             <a href="{url}"><img src="{c['image']}&width=400" width="200" alt="{esc(c['title'])}" style="display:block;width:200px;max-width:100%;height:auto;border:0;background:{WHITE}"></a>
           </td>
           <td class="stack" valign="top">
-            <div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{GREY_TXT}">{esc(c['vendor'])}</div>
-            <div style="font-size:16px;line-height:21px;font-weight:700;color:{BLACK};margin-top:4px"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(c['title'])}</a></div>
+            <div class="m-label" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{GREY_TXT}">{esc(c['vendor'])}</div>
+            <div class="m-title" style="font-size:17px;line-height:22px;font-weight:700;color:{BLACK};margin-top:4px"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(c['title'])}</a></div>
             {variants}{blurb}
-            <div style="font-size:14px;margin-top:10px;color:{BLACK}">{price_html(c)}</div>
-            <div style="margin-top:14px"><a href="{url}" style="display:inline-block;background:{BLACK};color:{WHITE};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:10px 16px">View Product</a></div>
+            <div class="m-price" style="font-size:15px;margin-top:10px;color:{BLACK}">{price_html(c)}</div>
+            <div style="margin-top:14px"><a href="{url}" class="m-btn" style="display:inline-block;background:{BLACK};color:{WHITE};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:10px 16px">View Product</a></div>
           </td>
         </tr></table>
       </td></tr>"""
@@ -580,8 +595,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
         list_html = f"""
   <tr><td style="padding:30px 24px 0 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
-      <td style="font-size:18px;font-weight:bold;color:{BLACK}">{list_title}</td>
-      <td align="right" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{link('/collections/newreleases')}" style="color:{BLACK};text-decoration:underline">VIEW ALL</a></td>
+      <td class="m-section" style="font-size:18px;font-weight:bold;color:{BLACK}">{list_title}</td>
+      <td align="right" class="m-label" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{link('/collections/newreleases')}" style="color:{BLACK};text-decoration:underline">VIEW ALL</a></td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
@@ -593,8 +608,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
         return f"""
   <tr><td style="padding:{pad_top}px 24px 8px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
-      <td style="font-size:18px;font-weight:bold;color:{BLACK}">{title}</td>
-      <td align="right" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{href}" style="color:{BLACK};text-decoration:underline">{link_text}</a></td>
+      <td class="m-section" style="font-size:18px;font-weight:bold;color:{BLACK}">{title}</td>
+      <td align="right" class="m-label" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{href}" style="color:{BLACK};text-decoration:underline">{link_text}</a></td>
     </tr></table>
   </td></tr>"""
 
@@ -611,8 +626,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
       <td class="stack{'' if last else ' stack-img'}" width="268" valign="top" style="width:268px;{pad}">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="268" style="width:100%">
           <tr><td>{pic}</td></tr>
-          <tr><td style="padding:12px 0 4px 0;font-size:14px;line-height:19px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></td></tr>
-          <tr><td style="font-size:12px;line-height:17px;color:{GREY_TXT}">{esc(article_teaser(a))}</td></tr>
+          <tr><td class="m-title" style="padding:12px 0 4px 0;font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></td></tr>
+          <tr><td class="m-small" style="font-size:13px;line-height:18px;color:{GREY_TXT}">{esc(article_teaser(a))}</td></tr>
         </table>
       </td>"""
         cells = "".join(post_cell(a, i == len(posts) - 1) for i, a in enumerate(posts))
@@ -637,8 +652,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
           {when_cell}
           <td valign="top">
-            <div style="font-size:14px;line-height:19px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></div>
-            <div style="font-size:12px;line-height:17px;color:{GREY_TXT};margin-top:4px">{esc(article_teaser(a))}</div>
+            <div class="m-title" style="font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></div>
+            <div class="m-small" style="font-size:13px;line-height:18px;color:{GREY_TXT};margin-top:4px">{esc(article_teaser(a))}</div>
           </td>
           <td align="right" valign="middle" width="80"><a href="{url}" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{BLACK};text-decoration:underline">DETAILS</a></td>
         </tr></table>
@@ -654,7 +669,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
         f'<td align="center" style="padding:11px 6px"><a href="{link(p)}" style="color:{WHITE};font-size:12px;letter-spacing:1px;text-decoration:none">{t}</a></td>'
         for t, p in NAV)
     cat_rows = "".join(
-        f'<tr><td align="center" style="padding:9px 0;border-bottom:1px solid {HAIRLINE}"><a href="{link(p)}" style="color:#c1c1c1;font-size:14px;font-weight:700;letter-spacing:2px;text-decoration:none">{t}</a></td></tr>'
+        f'<tr><td align="center" class="m-body" style="padding:9px 0;border-bottom:1px solid {HAIRLINE}"><a href="{link(p)}" style="color:#c1c1c1;font-size:14px;font-weight:700;letter-spacing:2px;text-decoration:none">{t}</a></td></tr>'
         for t, p in CATEGORY_LINKS)
     social = "".join(
         f'<a href="{u}" style="display:inline-block;margin:0 7px"><img src="{img}" width="25" height="25" alt="{a}" style="display:block;border:0"></a>'
@@ -679,18 +694,18 @@ def render_picks(cards, hero, extras, week_label, style=None):
   <tr><td align="center" style="padding:10px 0 4px 0;font-size:10px;color:{GREY_TXT}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
   <tr><td align="center" style="padding:6px 0 14px 0"><a href="{link('/')}"><img src="{LOGO}" width="600" alt="Moog Audio" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
   <tr><td bgcolor="{BLACK}" style="background:{BLACK}">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%"><tr>{nav_cells}</tr></table>
+    <table role="presentation" class="m-nav" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%"><tr>{nav_cells}</tr></table>
   </td></tr>
   <tr><td height="3" style="height:3px;line-height:3px;font-size:0;background:{CORAL};background-image:linear-gradient(90deg,#fdbb8f 0%,#f86726 35%,#eabf7c 65%,#ffe2d8 85%,#d5ddda 100%)">&nbsp;</td></tr>
-  <tr><td align="center" style="padding:14px 20px;font-size:12px;color:{BLACK};border-bottom:1px solid {HAIRLINE}"><strong>FREE SHIPPING</strong> on most orders over 199$ | <strong>FLEXITI</strong> financing available at checkout</td></tr>
+  <tr><td align="center" class="m-small" style="padding:14px 20px;font-size:12px;color:{BLACK};border-bottom:1px solid {HAIRLINE}"><strong>FREE SHIPPING</strong> on most orders over 199$ | <strong>FLEXITI</strong> financing available at checkout</td></tr>
   <tr><td align="center" style="padding:36px 24px 26px 24px">
-    <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:{GREY_TXT}">{esc(d['eyebrow'])} &middot; {esc(week_label)}</div>
-    <h1 style="margin:10px 0 0 0;font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.3px;color:{BLACK}">{esc(d['title'])}</h1>
-    <p style="margin:10px 0 0 0;font-size:14px;line-height:21px;color:{BLACK}">{esc(intro)}</p>
+    <div class="m-label" style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:{GREY_TXT}">{esc(d['eyebrow'])} &middot; {esc(week_label)}</div>
+    <h1 class="m-h1" style="margin:10px 0 0 0;font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.3px;color:{BLACK}">{esc(d['title'])}</h1>
+    <p class="m-intro" style="margin:10px 0 0 0;font-size:15px;line-height:22px;color:{BLACK}">{esc(intro)}</p>
   </td></tr>{hero_html}{list_html}
   <tr><td align="center" style="padding:28px 24px 40px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-      <td bgcolor="{BLACK}" style="background:{BLACK}"><a href="{link('/collections/newreleases')}" style="{btn}padding:14px 26px;">Shop All New Releases</a></td>
+      <td bgcolor="{BLACK}" style="background:{BLACK}"><a href="{link('/collections/newreleases')}" class="m-btn" style="{btn}padding:14px 26px;">Shop All New Releases</a></td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
@@ -701,7 +716,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
       <td bgcolor="{BLACK}" style="background:{BLACK};padding:24px">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="504" style="width:100%"><tr>
-          <td class="stack" style="font-size:14px;line-height:20px;color:{WHITE};padding-right:16px"><span style="font-weight:bold">Visit the Boutique.</span> Try the gear in person &mdash; 3828 St Laurent Blvd, Montreal.</td>
+          <td class="stack m-body" style="font-size:14px;line-height:20px;color:{WHITE};padding-right:16px"><span style="font-weight:bold">Visit the Boutique.</span> Try the gear in person &mdash; 3828 St Laurent Blvd, Montreal.</td>
           <td align="right" width="140">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right"><tr>
               <td style="border:1px solid {WHITE}"><a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" style="display:block;padding:10px 20px;font-size:11px;font-weight:bold;letter-spacing:1px;color:{WHITE};text-decoration:none">GET DIRECTIONS</a></td>
@@ -713,19 +728,19 @@ def render_picks(cards, hero, extras, week_label, style=None):
   </td></tr>
   <tr><td style="padding:16px 24px 0 24px;border-bottom:1px solid {HAIRLINE}">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="552" style="width:100%"><tr>
-      <td class="stack" width="268" valign="top" style="font-size:12px;line-height:17px;color:{BLACK};padding-right:16px;padding-bottom:16px"><span style="font-weight:bold">Free shipping.</span> We offer Free Shipping on most orders over 199$. Conditions may apply.</td>
-      <td class="stack" width="268" valign="top" style="font-size:12px;line-height:17px;color:{BLACK};padding-bottom:16px"><span style="font-weight:bold">Rewards.</span> For each dollar spent, earn one reward point which you can use as a discount for your future purchases.</td>
+      <td class="stack m-small" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-right:16px;padding-bottom:16px"><span style="font-weight:bold">Free shipping.</span> We offer Free Shipping on most orders over 199$. Conditions may apply.</td>
+      <td class="stack m-small" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-bottom:16px"><span style="font-weight:bold">Rewards.</span> For each dollar spent, earn one reward point which you can use as a discount for your future purchases.</td>
     </tr></table>
   </td></tr>
   <tr><td align="center" style="padding:28px 0 6px 0"><img src="{IMG_PAYMENTS}" width="600" alt="Affirm, Flexiti and PayPlan by RBC financing" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr>
   <tr><td align="center" style="padding:6px 0 10px 0"><a href="{link('/pages/reward')}"><img src="{IMG_REWARDS}" width="600" alt="Patch Rewards: earn points every time you shop, connect and review" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
   <tr><td align="center" style="padding:10px 0 22px 0">{social}</td></tr>
-  <tr><td align="center" style="padding:0 24px 12px 24px;font-size:12px;line-height:18px;color:{BLACK}">
+  <tr><td align="center" class="m-small" style="padding:0 24px 12px 24px;font-size:13px;line-height:19px;color:{BLACK}">
     <a href="{link('/')}" style="color:{BLACK};font-weight:700;text-decoration:underline">moogaudio.com</a><br>
     <a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" style="color:{BLACK};text-decoration:underline">{ADDRESS}</a>
   </td></tr>
-  <tr><td style="padding:8px 24px 16px 24px;font-size:10px;line-height:15px;color:{GREY_TXT};text-align:justify">{esc(AFFIRM_LEGAL)}</td></tr>
-  <tr><td align="center" style="padding:6px 24px 32px 24px;font-size:11px;line-height:17px;color:{BLACK}">No longer want to receive these emails? <a href="{{% manage_preferences_link %}}" style="color:{BLACK};text-decoration:underline">Manage Preferences</a> | <a href="{{% unsubscribe_link %}}" style="color:{BLACK};text-decoration:underline">Unsubscribe</a></td></tr>
+  <tr><td class="m-legal" style="padding:8px 24px 16px 24px;font-size:11px;line-height:16px;color:{GREY_TXT};text-align:justify">{esc(AFFIRM_LEGAL)}</td></tr>
+  <tr><td align="center" class="m-small" style="padding:6px 24px 32px 24px;font-size:12px;line-height:18px;color:{BLACK}">No longer want to receive these emails? <a href="{{% manage_preferences_link %}}" style="color:{BLACK};text-decoration:underline">Manage Preferences</a> | <a href="{{% unsubscribe_link %}}" style="color:{BLACK};text-decoration:underline">Unsubscribe</a></td></tr>
 </table>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" align="center" style="width:600px;margin:0 auto"><tr><td height="24" style="font-size:1px;line-height:1px">&nbsp;</td></tr></table>
 </div>
