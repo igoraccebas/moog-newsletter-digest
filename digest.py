@@ -244,8 +244,10 @@ def normalize_admin(node):
     }
 
 
-def load_products(path):
-    """Accepts a raw Admin GraphQL response, a list of admin nodes, or a storefront-style list."""
+def load_products(path, allow_unpublished=False):
+    """Accepts a raw Admin GraphQL response, a list of admin nodes, or a storefront-style list.
+    allow_unpublished=True (launch mode) keeps DRAFT / not-yet-published products so an embargoed
+    launch can be tagged ahead of time; the manifest then carries live=false."""
     data = json.loads(Path(path).read_text())
     if isinstance(data, dict):
         data = data.get("data", data).get("products", data)
@@ -253,10 +255,13 @@ def load_products(path):
     out = []
     for item in data:
         p = normalize_admin(item) if "productType" in item else item
-        if p.get("status") and p["status"] != "ACTIVE":
+        if p.get("status") == "ARCHIVED":
             continue
-        if not p.get("published_at"):
-            continue
+        if not allow_unpublished:
+            if p.get("status") and p["status"] != "ACTIVE":
+                continue
+            if not p.get("published_at"):
+                continue
         out.append(p)
     return out
 
@@ -1278,8 +1283,11 @@ def run_hot(a, d, keep, sold_out, noise, now):
         for p in noise:
             print(f"  noise:    {p['title']}  [{p.get('product_type')}]")
         return 0
-    keep = sorted(keep, key=lambda p: p.get("published_at") or "", reverse=True)
+    # newest first; a not-yet-published (embargoed) product counts as the newest of all
+    keep = sorted(keep, key=lambda p: p.get("published_at") or "9999", reverse=True)
     product, queued = keep[0], keep[1:]
+    live = bool(product.get("published_at")) and (product.get("status") or "ACTIVE") == "ACTIVE"
+    product.setdefault("published_at", now.isoformat())     # group() sorts on it
     card = group([product])[0]
     extras = load_extras(a.extras)
     h1, sub = split_title(card["title"], card["vendor"], card.get("type") or "")
@@ -1302,6 +1310,7 @@ def run_hot(a, d, keep, sold_out, noise, now):
         "untag": [{"id": i, "tags": [TAG_HOT]} for i in card.get("admin_ids", [])],
         "add_to_collection": {**NEW_RELEASES_COLLECTION, "product_ids": list(card.get("admin_ids", []))},
         "product": {"headline": h1, "subline": sub, "vendor": card["vendor"], "title": card["title"],
+                    "live": live, "status": product.get("status"),
                     "price": card["price"], "compare": card["compare"], "url": card["url"],
                     "images": images, "thumbnails": len(images[1:4]), "specs": spec_rows(product.get("body_html", "")),
                     "blurb": blurb},
@@ -1313,6 +1322,9 @@ def run_hot(a, d, keep, sold_out, noise, now):
     if rc:
         return rc
     print(f"Product Launch: {len(keep)} tagged {TAG_HOT}, featuring the most recent; {len(queued)} left for later runs")
+    if not live:
+        print(f"WARNING: product is NOT LIVE yet (status {product.get('status')}, not published to the Online Store). "
+              f"The draft links to {card['url']} — publish the product before the campaign's send time.")
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
     print(f"  PRODUCT {card['vendor']} | {h1} | {sub} | {card['price']} | {len(images)} image(s) | {len(spec_rows(product.get('body_html', '')))} spec rows")
     for p in queued:
@@ -1344,7 +1356,7 @@ def main():
     state = json.loads(state_file.read_text()) if (state_file.exists() and not a.dry_run) else {"announced": {}, "members": []}
 
     if a.from_json:
-        members = load_products(a.from_json)      # every tagged product is a candidate
+        members = load_products(a.from_json, allow_unpublished=(a.dept == "hot"))   # every tagged product is a candidate
         fresh = list(members)
     else:
         members = fetch_collection(d["handle"])
@@ -1358,9 +1370,11 @@ def main():
             if (age <= a.days or newly_added) and str(p["id"]) not in state["announced"]:
                 fresh.append(p)
 
-    sold_out = [p for p in fresh if not is_purchasable(p)]
-    noise = [p for p in fresh if is_purchasable(p) and is_noise(p)]
-    keep = [p for p in fresh if is_purchasable(p) and not is_noise(p)]
+    def sellable(p):   # launch mode: an embargoed (unpublished) product is kept even if its variants
+        return is_purchasable(p) or (a.dept == "hot" and not p.get("published_at"))   # are not sellable yet
+    sold_out = [p for p in fresh if not sellable(p)]
+    noise = [p for p in fresh if sellable(p) and is_noise(p)]
+    keep = [p for p in fresh if sellable(p) and not is_noise(p)]
     if a.dept == "hot":
         return run_hot(a, d, keep, sold_out, noise, now)
     hero = None

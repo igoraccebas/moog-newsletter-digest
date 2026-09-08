@@ -70,6 +70,12 @@ Run by hand: `python3 digest.py hot --from-json out/hot.json --extras out/extras
 `out/hot-<date>-<slug>.html/.json`.
 Subject: "It's here: <headline> — <sub-line>"; the manifest also lists `queued_for_next_run`.
 
+Embargoed launches: a product that is still a draft, or scheduled to go live later, can be tagged
+ahead of time. Launch mode keeps unpublished products (the weekly digest does not), the manifest
+carries `product.live=false`, and the run report starts with a NOT LIVE YET warning. Igor then
+schedules the Klaviyo campaign for the embargo time; the product must be published in Shopify
+before that moment or the links 404.
+
 ## Departments & schedule
 
 | key     | Shopify collection            | digest day |
