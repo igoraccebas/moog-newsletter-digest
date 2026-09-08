@@ -65,16 +65,18 @@ Sender: Moog Audio <nouvelles@moogaudio.com>.
 Flags: `--days N` widens the publish window (first run / catch-up), `--dry-run` skips state.
 
 ## Dark mode (since 2026-09-08)
-Two layers, because no single trick covers every client:
+Two layers, because no single trick covers every client. `DARK_MODE` in digest.py picks layer 1:
 
-1. **A designed dark theme** for clients that honour one. `DARK_RULES` in digest.py is emitted
-   twice: inside `@media (prefers-color-scheme: dark)` (Apple Mail, iOS Mail, Outlook iOS/Android)
-   and prefixed with `[data-ogsc]` (Outlook.com / new Outlook). Page `#0f0f0f`, body `#1c1c1c`,
-   text white, grey text `#b5b5b5`, hairlines (`.hl`) `#3a3a3a`, and every `.btn` inverts to
-   white-on-black. Things that keep their colour in both modes carry `LOCK_RULES` for Outlook:
-   hero text on the gradient (`.txt-hero`) and its black button (`.btn-hero`), white image tiles
-   (`.bg-tile`), the nav band, the red sale flag. `<meta name="color-scheme" content="light dark">`
-   is what lets Apple Mail apply the theme; set it back to `light` to lock Apple Mail to light.
+1. **`lock-light` (default).** The email stays light wherever the client lets us decide:
+   `<meta name="color-scheme" content="light">` for Apple Mail / iOS Mail, and `LIGHT_LOCK_RULES`
+   (`[data-ogsc]`/`[data-ogsb]`) re-assert every colour in Outlook.com / new Outlook dark mode.
+   Every element that carries a colour has a class (`.txt-*`, `.bg-*`, `.btn`, `.hl`) so nothing
+   is left for Outlook to recolour on its own.
+   **`themed`** is the alternative: `DARK_RULES` emitted inside `@media (prefers-color-scheme: dark)`
+   and under `[data-ogsc]` give dark-mode users a designed dark theme (dark page/body, white text,
+   `.btn` inverted to white-on-black, dimmed hairlines) while `LOCK_RULES` keep the hero text,
+   white tiles, nav band and sale flag as designed. Igor tried it on 2026-09-08 and preferred
+   light-by-default, so it is off.
 2. **Survive inversion everywhere else.** Gmail ignores layer 1 and inverts by itself (iOS flips
    light *and* dark blocks, so buttons invert there too; Android flips only light ones, so black
    buttons stay black with their white hairline border). The layout is built so inverting it still

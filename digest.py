@@ -127,7 +127,33 @@ LOCK_RULES = [   # same in light and dark; only needed because Outlook recolours
 ]
 
 
+# "lock-light" (default, Igor 2026-09-08): the email stays light wherever the client lets us decide
+# (Apple Mail, iOS Mail, Outlook.com / new Outlook). Only Gmail and Outlook mobile invert, and the
+# layout survives that. "themed": serve the designed dark theme above to dark-mode users instead.
+DARK_MODE = "lock-light"
+LIGHT_LOCK_RULES = [   # Outlook.com / new Outlook re-assert the light design in their dark mode
+    ("[data-ogsb] .bg-page", "background-color:#ececec!important"),
+    ("[data-ogsb] .bg-body,[data-ogsb] .bg-tile", "background-color:#ffffff!important"),
+    ("[data-ogsb] .bg-nav,[data-ogsb] .bg-band,[data-ogsb] .btn,[data-ogsb] .btn-hero", "background-color:#000000!important"),
+    ("[data-ogsb] .bg-red", "background-color:#c1272d!important"),
+    ("[data-ogsc] .txt-black,[data-ogsc] .txt-black a,[data-ogsc] .txt-hero,[data-ogsc] .txt-hero a", "color:#000000!important"),
+    ("[data-ogsc] .txt-grey", "color:#6f6f6f!important"),
+    ("[data-ogsc] .txt-white,[data-ogsc] .txt-white a,[data-ogsc] .btn,[data-ogsc] .btn a,[data-ogsc] .btn-hero a", "color:#ffffff!important"),
+    ("[data-ogsc] .txt-red", "color:#c1272d!important"),
+    ("[data-ogsc] .txt-coral", "color:#f86726!important"),
+    ("[data-ogsc] a.txt-cat", "color:#9a9a9a!important"),
+    ("[data-ogsc] .hl", "border-color:#dcdcdc!important"),
+]
+
+
+def color_scheme_meta():
+    return "light" if DARK_MODE == "lock-light" else "light dark"
+
+
 def dark_css():
+    if DARK_MODE == "lock-light":
+        return (":root{color-scheme:light only;supported-color-schemes:light;}"
+                + "".join(f"{s}{{{d}}}" for s, d in LIGHT_LOCK_RULES))
     media = "@media (prefers-color-scheme: dark){" + "".join(f"{s}{{{d}}}" for s, d in DARK_RULES) + "}"
     outlook = "".join(",".join("[data-ogsc] " + part.strip() for part in s.split(",")) + f"{{{d}}}" for s, d in DARK_RULES)
     locks = "".join(f"{s}{{{d}}}" for s, d in LOCK_RULES)
@@ -731,8 +757,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
+<meta name="color-scheme" content="{color_scheme_meta()}">
+<meta name="supported-color-schemes" content="{color_scheme_meta()}">
 <title>{esc(d['title'])}</title>
 <style>{MOBILE_CSS}{dark_css()}</style>
 <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
