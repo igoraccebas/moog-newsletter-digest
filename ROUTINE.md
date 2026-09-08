@@ -37,9 +37,10 @@ templates read/write).
 # Cloud routine — "Product Launch" (hourly, tag `newsletter-hot`)
 
 Second routine, same environment, connectors and Klaviyo secret as the weekly one. Prompt:
-ROUTINE_HOT_PROMPT.md. Cron `0 * * * *` (every hour at :00, UTC — no DST issue because it runs
-around the clock; narrow it to business hours by editing the cron, e.g. `0 11-23,0-2 * * *` for
-7am–10pm Toronto in summer).
+ROUTINE_HOT_PROMPT.md. Routine id: trig_01FrnmCwsoSL853JYYmxJ1hk — ENABLED 2026-09-08 20:06 UTC.
+Cron `5 * * * *` (every hour at :05 UTC; the server moved it off :00). Runs around the clock, so no
+DST issue; narrow it to business hours by editing the cron, e.g. `5 11-23,0-2 * * *` for 7am–10pm
+Toronto in summer. Cost note: each run is a short cloud session even when nothing is tagged.
 
 - Runs ~24 times a day; when nothing is tagged it ends quietly with no notification.
 - When a product is tagged: Draft in Klaviyo → added to New Releases → tag removed →

@@ -66,7 +66,8 @@ Where the content comes from — all from the Shopify product, nothing hand-writ
 - static copy lines live in `LAUNCH_NOTE` and `LAUNCH_BAND` in digest.py.
 
 Run by hand: `python3 digest.py hot --from-json out/hot.json --extras out/extras.json [--publish] [--dry-run]`
-(`out/hot-test.json` is a saved sample). Output: `out/hot-<date>-<slug>.html/.json`.
+(a sample Admin response is kept locally in out/hot-test.json, not in the repo). Output:
+`out/hot-<date>-<slug>.html/.json`.
 Subject: "It's here: <headline> — <sub-line>"; the manifest also lists `queued_for_next_run`.
 
 ## Departments & schedule
