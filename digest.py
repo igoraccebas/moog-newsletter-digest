@@ -49,6 +49,10 @@ FROM_EMAIL, FROM_LABEL = "nouvelles@moogaudio.com", "Moog Audio"
 # Brand tokens (Moog Audio design system)
 BLACK, WHITE, GREY_TXT, HAIRLINE = "#000000", "#ffffff", "#6f6f6f", "#dcdcdc"
 RED, GREEN, CORAL = "#c1272d", "#1f8a4c", "#f86726"
+LIGHT_TXT, CAT_TXT = "#d9d9d9", "#9a9a9a"   # light text on the black hero panel / category links
+# Gmail's dark mode recolours background-color and text but never touches background-images, so a
+# white CSS gradient keeps an image-only cell white in every mode (only use on cells with NO text).
+WHITE_LOCK = "background-image:linear-gradient(#ffffff,#ffffff);"
 FONT = "Helvetica, Arial, sans-serif"
 
 DEPARTMENTS = {
@@ -93,20 +97,41 @@ def pick_hero_style(day=None, name=None):
 
 
 # Keep the email light in dark mode where the client lets us:
-#  - <meta color-scheme=light> + CSS color-scheme stop Apple Mail / iOS Mail from inverting.
-#  - [data-ogsc]/[data-ogsb] rules re-assert our colours inside Outlook (desktop, web, iOS, Android).
-#  - Gmail apps ignore both and may still invert; we let them do so consistently rather than risk
-#    white-on-white by half-fighting it.
-LIGHT_LOCK_CSS = (
-    ":root{color-scheme:light only;supported-color-schemes:light;}"
-    "[data-ogsb] .bg-white{background-color:#ffffff!important;}"
-    "[data-ogsb] .bg-black{background-color:#000000!important;}"
-    "[data-ogsb] .bg-page{background-color:#ececec!important;}"
-    "[data-ogsc] .txt-black{color:#000000!important;}"
-    "[data-ogsc] .txt-grey{color:#6f6f6f!important;}"
-    "[data-ogsc] .txt-white{color:#ffffff!important;}"
-    "[data-ogsc] a.txt-black{color:#000000!important;}"
-)
+#  Dark mode strategy (2026-09-08):
+#  - Clients that honour a dark theme (Apple Mail, iOS Mail, Outlook apps via prefers-color-scheme;
+#    Outlook.com / new Outlook via [data-ogsc]/[data-ogsb]) get the DESIGNED dark theme below:
+#    dark page, white text, buttons inverted to white-on-black, hairlines dimmed. Things that must
+#    keep their colour in every mode (hero text on the gradient image, white image tiles, nav band,
+#    red sale flag) carry LOCK rules for Outlook, which otherwise recolours them on its own.
+#  - Gmail (iOS/Android) ignores all of it and inverts by itself (iOS flips light AND dark blocks,
+#    Android only light ones), so the layout is also built to survive inversion: live-text wordmark,
+#    image-only cells locked white with WHITE_LOCK, black buttons with a white hairline border.
+DARK_RULES = [
+    (".bg-page", "background-color:#0f0f0f!important"),
+    (".bg-body", "background-color:#1c1c1c!important"),
+    (".txt-black,.txt-black a", "color:#ffffff!important"),
+    (".txt-grey", "color:#b5b5b5!important"),
+    (".txt-red", "color:#ff5c5c!important"),
+    (".hl", "border-color:#3a3a3a!important"),
+    (".btn", "background-color:#ffffff!important;color:#000000!important;border-color:#ffffff!important"),
+    (".btn a", "color:#000000!important"),
+]
+LOCK_RULES = [   # same in light and dark; only needed because Outlook recolours on its own
+    ("[data-ogsb] .bg-tile", "background-color:#ffffff!important"),
+    ("[data-ogsb] .bg-nav,[data-ogsb] .bg-band,[data-ogsb] .btn-hero", "background-color:#000000!important"),
+    ("[data-ogsb] .bg-red", "background-color:#c1272d!important"),
+    ("[data-ogsc] .txt-hero,[data-ogsc] .txt-hero a", "color:#000000!important"),
+    ("[data-ogsc] .txt-white,[data-ogsc] .txt-white a,[data-ogsc] .btn-hero a", "color:#ffffff!important"),
+    ("[data-ogsc] .txt-coral", "color:#f86726!important"),
+    ("[data-ogsc] a.txt-cat", "color:#9a9a9a!important"),
+]
+
+
+def dark_css():
+    media = "@media (prefers-color-scheme: dark){" + "".join(f"{s}{{{d}}}" for s, d in DARK_RULES) + "}"
+    outlook = "".join(",".join("[data-ogsc] " + part.strip() for part in s.split(",")) + f"{{{d}}}" for s, d in DARK_RULES)
+    locks = "".join(f"{s}{{{d}}}" for s, d in LOCK_RULES)
+    return ":root{color-scheme:light dark;supported-color-schemes:light dark;}" + media + outlook + locks
 
 MOBILE_CSS = (
     "@media only screen and (max-width:480px){"
@@ -126,6 +151,7 @@ MOBILE_CSS = (
     " .m-small{font-size:14px!important;line-height:20px!important;}"
     " .m-legal{font-size:12px!important;line-height:17px!important;}"
     " .m-full{width:100%!important;max-width:100%!important;height:auto!important;}"
+    " .m-logo{font-size:24px!important;line-height:30px!important;letter-spacing:4px!important;}"
     "}")
 # Noise rules (applied to every department). Tweak freely.
 EXCLUDE_TYPES = {"Parts"}
@@ -552,11 +578,12 @@ def render_picks(cards, hero, extras, week_label, style=None):
     btn = (f"display:block;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
            f"color:{WHITE};text-decoration:none;")
 
-    def price_html(c, size=14):
+    def price_html(c, size=14, dark=False):
+        # dark=True is for the black hero panel: coral sale price and light strike-through
         if c["compare"]:
-            return (f'<span style="color:{RED};font-weight:700;">{esc(c["price"])}</span> '
-                    f'<span style="color:{GREY_TXT};text-decoration:line-through;font-size:12px;">{esc(c["compare"])}</span> '
-                    f'<span style="display:inline-block;background:{RED};color:{WHITE};font-size:10px;font-weight:700;'
+            return (f'<span class="{"txt-coral" if dark else "txt-red"}" style="color:{CORAL if dark else RED};font-weight:700;">{esc(c["price"])}</span> '
+                    f'<span class="{"txt-light" if dark else "txt-grey"}" style="color:{LIGHT_TXT if dark else GREY_TXT};text-decoration:line-through;font-size:12px;">{esc(c["compare"])}</span> '
+                    f'<span class="bg-red txt-white" style="display:inline-block;background:{RED};color:{WHITE};font-size:10px;font-weight:700;'
                     f'letter-spacing:1px;text-transform:uppercase;padding:3px 6px;margin-left:6px;">Save {esc(c["save"])}</span>')
         return esc(c["price"])
 
@@ -565,19 +592,19 @@ def render_picks(cards, hero, extras, week_label, style=None):
         url = hero["url"] + "?" + utm
         blurb = excerpt_long = hero.get("excerpt_long") or hero.get("excerpt") or ""
         hero_html = f"""
-  <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:32px 24px">
+  <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:28px 24px 32px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">
-      <tr><td class="m-label txt-black" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
-      <tr><td align="center" class="bg-white" style="padding-bottom:18px;background:{WHITE};border:1px solid {BLACK}">
-        <a href="{url}" style="display:block;padding:18px 0 0 0"><img src="{hero['image']}&width=800" width="400" alt="{esc(hero['title'])}" style="display:block;width:100%;max-width:400px;height:auto;border:0;margin:0 auto"></a>
+      <tr><td class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
+      <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:18px 0">
+        <a href="{url}" style="display:block"><img src="{hero['image']}&width=800" width="400" alt="{esc(hero['title'])}" style="display:block;width:100%;max-width:400px;height:auto;border:0;margin:0 auto"></a>
       </td></tr>
-      <tr><td class="m-label txt-black" style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
-      <tr><td class="m-hero-title txt-black" style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}">{esc(hero['title'])}</td></tr>
-      {f'<tr><td class="m-body txt-black" style="padding-top:8px;font-size:14px;line-height:21px;color:{BLACK}">{esc(blurb)}</td></tr>' if blurb else ''}
-      <tr><td class="m-price txt-black" style="padding-top:10px;font-size:16px;color:{BLACK}">{price_html(hero, 15)}</td></tr>
+      <tr><td class="m-label txt-hero" style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
+      <tr><td class="m-hero-title txt-hero" style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(hero['title'])}</a></td></tr>
+      {f'<tr><td class="m-body txt-hero" style="padding-top:8px;font-size:14px;line-height:21px;color:{BLACK}">{esc(blurb)}</td></tr>' if blurb else ''}
+      <tr><td class="m-price txt-hero" style="padding-top:10px;font-size:16px;color:{BLACK}">{price_html(hero, 15)}</td></tr>
       <tr><td style="padding-top:16px">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-          <td bgcolor="{BLACK}" class="bg-black" style="background:{BLACK}"><a href="{url}" class="m-btn txt-white" style="{btn}padding:12px 28px;">Shop Now</a></td>
+          <td bgcolor="{BLACK}" class="btn-hero" style="background:{BLACK}"><a href="{url}" class="m-btn txt-white" style="{btn}padding:12px 28px;">Shop Now</a></td>
         </tr></table>
       </td></tr>
     </table>
@@ -590,17 +617,21 @@ def render_picks(cards, hero, extras, week_label, style=None):
         variants = (f'<div class="m-small txt-grey" style="font-size:12px;color:{GREY_TXT};margin-top:4px">{len(c["variants"])} options: {esc(", ".join(c["variants"]))}</div>'
                     if c["variants"] else "")
         return f"""
-      <tr><td style="padding:22px 0{border}">
+      <tr><td class="hl" style="padding:22px 0{border}">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           <td class="stack stack-img" width="200" valign="top" style="width:200px;padding-right:20px">
-            <a href="{url}"><img src="{c['image']}&width=400" width="200" alt="{esc(c['title'])}" style="display:block;width:200px;max-width:100%;height:auto;border:0;background:{WHITE}"></a>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+              <td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {HAIRLINE};padding:8px">
+                <a href="{url}" style="display:block"><img src="{c['image']}&width=400" width="182" alt="{esc(c['title'])}" style="display:block;width:100%;max-width:182px;height:auto;border:0;margin:0 auto"></a>
+              </td>
+            </tr></table>
           </td>
           <td class="stack" valign="top">
             <div class="m-label txt-grey" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{GREY_TXT}">{esc(c['vendor'])}</div>
             <div class="m-title txt-black" style="font-size:17px;line-height:22px;font-weight:700;color:{BLACK};margin-top:4px"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(c['title'])}</a></div>
             {variants}{blurb}
             <div class="m-price txt-black" style="font-size:15px;margin-top:10px;color:{BLACK}">{price_html(c)}</div>
-            <div style="margin-top:14px"><a href="{url}" class="m-btn bg-black txt-white" style="display:inline-block;background:{BLACK};color:{WHITE};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:10px 16px">View Product</a></div>
+            <div style="margin-top:14px"><a href="{url}" class="m-btn btn" style="display:inline-block;background:{BLACK};color:{WHITE};border:1px solid {WHITE};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:10px 16px">View Product</a></div>
           </td>
         </tr></table>
       </td></tr>"""
@@ -660,19 +691,19 @@ def render_picks(cards, hero, extras, week_label, style=None):
         def event_row(a, first):
             url = article_url(a) + "?" + utm
             date_label, time_label = event_when(a)
-            when = (f'{esc(date_label)}' + (f'<br><span style="font-weight:normal;color:{GREY_TXT}">{esc(time_label)}</span>' if time_label else "")) if date_label else ""
-            when_cell = (f'<td width="90" valign="top" style="width:90px;font-size:12px;line-height:17px;font-weight:bold;color:{CORAL};letter-spacing:1px;padding-right:16px">{when}</td>'
+            when = (f'{esc(date_label)}' + (f'<br><span class="txt-grey" style="font-weight:normal;color:{GREY_TXT}">{esc(time_label)}</span>' if time_label else "")) if date_label else ""
+            when_cell = (f'<td width="90" valign="top" class="txt-coral" style="width:90px;font-size:12px;line-height:17px;font-weight:bold;color:{CORAL};letter-spacing:1px;padding-right:16px">{when}</td>'
                          if when else "")
             top = f"border-top:1px solid {HAIRLINE};" if first else ""
             return f"""
-      <tr><td style="padding:14px 0;{top}border-bottom:1px solid {HAIRLINE}">
+      <tr><td class="hl" style="padding:14px 0;{top}border-bottom:1px solid {HAIRLINE}">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           {when_cell}
           <td valign="top">
             <div class="m-title txt-black" style="font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></div>
             <div class="m-small txt-grey" style="font-size:13px;line-height:18px;color:{GREY_TXT};margin-top:4px">{esc(article_teaser(a))}</div>
           </td>
-          <td align="right" valign="middle" width="80"><a href="{url}" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{BLACK};text-decoration:underline">DETAILS</a></td>
+          <td align="right" valign="middle" width="80"><a href="{url}" class="txt-black" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{BLACK};text-decoration:underline">DETAILS</a></td>
         </tr></table>
       </td></tr>"""
         rows = "".join(event_row(a, i == 0) for i, a in enumerate(events))
@@ -686,7 +717,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
         f'<td align="center" style="padding:11px 6px"><a href="{link(p)}" class="txt-white" style="color:{WHITE};font-size:12px;letter-spacing:1px;text-decoration:none">{t}</a></td>'
         for t, p in NAV)
     cat_rows = "".join(
-        f'<tr><td align="center" class="m-body txt-black" style="padding:9px 0;border-bottom:1px solid {HAIRLINE}"><a href="{link(p)}" style="color:#c1c1c1;font-size:14px;font-weight:700;letter-spacing:2px;text-decoration:none">{t}</a></td></tr>'
+        f'<tr><td align="center" class="m-body hl" style="padding:9px 0;border-bottom:1px solid {HAIRLINE}"><a href="{link(p)}" class="txt-cat" style="color:{CAT_TXT};font-size:14px;font-weight:700;letter-spacing:2px;text-decoration:none">{t}</a></td></tr>'
         for t, p in CATEGORY_LINKS)
     social = ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>'
               + "".join(f'<td align="center" valign="middle" style="padding:0 7px;line-height:0;font-size:0"><a href="{u}" style="text-decoration:none;display:block;line-height:0">'
@@ -700,23 +731,23 @@ def render_picks(cards, hero, extras, week_label, style=None):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
-<meta name="supported-color-schemes" content="light">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
 <title>{esc(d['title'])}</title>
-<style>{MOBILE_CSS}{LIGHT_LOCK_CSS}</style>
+<style>{MOBILE_CSS}{dark_css()}</style>
 <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 </head>
-<body style="margin:0;padding:0;background:#ececec;-webkit-text-size-adjust:100%;">
+<body class="bg-page" style="margin:0;padding:0;background:#ececec;-webkit-text-size-adjust:100%;">
 <div class="bg-page" style="background:#ececec;padding:24px 0;font-family:Helvetica,Arial,sans-serif">
 <span style="display:none;font-size:1px;color:#ececec;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden">{esc(preheader)}</span>
-<table role="presentation" class="bg-white" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" style="width:100%;max-width:600px;margin:0 auto;background:{WHITE}">
-  <tr><td align="center" style="padding:10px 0 4px 0;font-size:10px;color:{GREY_TXT}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
-  <tr><td align="center" style="padding:6px 0 14px 0"><a href="{link('/')}"><img src="{LOGO}" width="600" alt="Moog Audio" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
-  <tr><td bgcolor="{BLACK}" class="bg-black" style="background:{BLACK}">
+<table role="presentation" class="bg-body" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" style="width:100%;max-width:600px;margin:0 auto;background:{WHITE}">
+  <tr><td align="center" class="txt-grey" style="padding:10px 0 4px 0;font-size:10px;color:{GREY_TXT}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
+  <tr><td align="center" class="m-logo txt-black" style="padding:18px 0 16px 0;font-size:28px;line-height:34px;letter-spacing:5px;font-weight:400;color:{BLACK}"><a href="{link('/')}" style="color:{BLACK};text-decoration:none">MOOG&nbsp;AUDIO</a></td></tr>
+  <tr><td bgcolor="{BLACK}" class="bg-nav" style="background:{BLACK}">
     <table role="presentation" class="m-nav" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{nav_cells}</tr></table>
   </td></tr>
   <tr><td height="3" style="height:3px;line-height:3px;font-size:0;background:{CORAL};background-image:linear-gradient(90deg,#fdbb8f 0%,#f86726 35%,#eabf7c 65%,#ffe2d8 85%,#d5ddda 100%)">&nbsp;</td></tr>
-  <tr><td align="center" class="m-small txt-black" style="padding:14px 20px;font-size:12px;color:{BLACK};border-bottom:1px solid {HAIRLINE}"><strong>FREE SHIPPING</strong> on most orders over 199$ | <strong>FLEXITI</strong> financing available at checkout</td></tr>
+  <tr><td align="center" class="m-small txt-black hl" style="padding:14px 20px;font-size:12px;color:{BLACK};border-bottom:1px solid {HAIRLINE}"><strong>FREE SHIPPING</strong> on most orders over 199$ | <strong>FLEXITI</strong> financing available at checkout</td></tr>
   <tr><td align="center" style="padding:36px 24px 26px 24px">
     <div class="m-label txt-grey" style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:{GREY_TXT}">{esc(d['eyebrow'])} &middot; {esc(week_label)}</div>
     <h1 class="m-h1 txt-black" style="margin:10px 0 0 0;font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.3px;color:{BLACK}">{esc(d['title'])}</h1>
@@ -724,16 +755,16 @@ def render_picks(cards, hero, extras, week_label, style=None):
   </td></tr>{hero_html}{list_html}
   <tr><td align="center" style="padding:28px 24px 40px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-      <td bgcolor="{BLACK}" class="bg-black" style="background:{BLACK}"><a href="{link('/collections/newreleases')}" class="m-btn txt-white" style="{btn}padding:14px 26px;">Shop All New Releases</a></td>
+      <td bgcolor="{BLACK}" class="btn" style="background:{BLACK};border:1px solid {WHITE}"><a href="{link('/collections/newreleases')}" class="m-btn" style="{btn}padding:14px 26px;">Shop All New Releases</a></td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-top:1px solid {HAIRLINE}">{cat_rows}
+    <table role="presentation" class="hl" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-top:1px solid {HAIRLINE}">{cat_rows}
     </table>
   </td></tr>{blog_html}{events_html}
   <tr><td style="padding:12px 24px 8px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
-      <td bgcolor="{BLACK}" class="bg-black" style="background:{BLACK};padding:24px">
+      <td bgcolor="{BLACK}" class="bg-band" style="background:{BLACK};padding:24px">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           <td class="stack stack-img m-body txt-white" style="font-size:14px;line-height:20px;color:{WHITE};padding-right:16px"><span style="font-weight:bold">Visit the Boutique.</span> Try the gear in person &mdash; 3828 St Laurent Blvd, Montreal.</td>
           <td align="right" width="140" class="stack" style="padding-top:0">
@@ -745,15 +776,15 @@ def render_picks(cards, hero, extras, week_label, style=None):
       </td>
     </tr></table>
   </td></tr>
-  <tr><td style="padding:16px 24px 0 24px;border-bottom:1px solid {HAIRLINE}">
+  <tr><td class="hl" style="padding:16px 24px 0 24px;border-bottom:1px solid {HAIRLINE}">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
-      <td class="stack m-small" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-right:16px;padding-bottom:16px"><span style="font-weight:bold">Free shipping.</span> We offer Free Shipping on most orders over 199$. Conditions may apply.</td>
-      <td class="stack m-small" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-bottom:16px"><span style="font-weight:bold">Rewards.</span> For each dollar spent, earn one reward point which you can use as a discount for your future purchases.</td>
+      <td class="stack m-small txt-black" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-right:16px;padding-bottom:16px"><span style="font-weight:bold">Free shipping.</span> We offer Free Shipping on most orders over 199$. Conditions may apply.</td>
+      <td class="stack m-small txt-black" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-bottom:16px"><span style="font-weight:bold">Rewards.</span> For each dollar spent, earn one reward point which you can use as a discount for your future purchases.</td>
     </tr></table>
   </td></tr>
-  <tr><td align="center" style="padding:28px 0 6px 0"><img src="{IMG_PAYMENTS}" width="600" alt="Affirm, Flexiti and PayPlan by RBC financing" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr>
-  <tr><td align="center" style="padding:6px 0 10px 0"><a href="{link('/pages/reward')}"><img src="{IMG_REWARDS}" width="600" alt="Patch Rewards: earn points every time you shop, connect and review" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
-  <tr><td align="center" style="padding:10px 0 22px 0;line-height:0;font-size:0">{social}</td></tr>
+  <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}padding:28px 0 6px 0"><img src="{IMG_PAYMENTS}" width="600" alt="Affirm, Flexiti and PayPlan by RBC financing" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr>
+  <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}padding:6px 0 10px 0"><a href="{link('/pages/reward')}"><img src="{IMG_REWARDS}" width="600" alt="Patch Rewards: earn points every time you shop, connect and review" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
+  <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}padding:10px 0 22px 0;line-height:0;font-size:0">{social}</td></tr>
   <tr><td align="center" class="m-small txt-black" style="padding:0 24px 12px 24px;font-size:13px;line-height:19px;color:{BLACK}">
     <a href="{link('/')}" style="color:{BLACK};font-weight:700;text-decoration:underline">moogaudio.com</a><br>
     <a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" style="color:{BLACK};text-decoration:underline">{ADDRESS}</a>
@@ -831,6 +862,49 @@ def publish_klaviyo(manifest, html_str, api_key):
             "campaign_url": f"https://www.klaviyo.com/campaign/{campaign_id}/wizard"}
 
 
+def replace_campaign_template(campaign_id, name, html_str, api_key):
+    """Swap the template on an EXISTING Klaviyo campaign that is still a Draft: creates a fresh CODE
+    template from html_str and assigns it to every e-mail message of the campaign. Subject, preview,
+    audiences and status are untouched. Refuses anything that is not a Draft. Never sends."""
+    headers = {"Authorization": f"Klaviyo-API-Key {api_key}", "revision": KLAVIYO_REVISION,
+               "accept": "application/json", "content-type": "application/json"}
+
+    def call(method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(KLAVIYO_API + path, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                raw = r.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Klaviyo {method} {path} -> HTTP {e.code}: {e.read().decode(errors='replace')[:800]}")
+
+    camp = call("GET", f"campaigns/{campaign_id}")
+    status = camp["data"]["attributes"].get("status", "")
+    if status.lower() != "draft":
+        raise RuntimeError(f"campaign {campaign_id} is '{status}', not Draft — refusing to touch it")
+    msgs = call("GET", f"campaigns/{campaign_id}/campaign-messages")
+    message_ids = [m["id"] for m in msgs.get("data", []) if m.get("attributes", {}).get("channel", "email") == "email"]
+    if not message_ids:
+        raise RuntimeError(f"campaign {campaign_id} has no e-mail message")
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+    t = call("POST", "templates", {"data": {"type": "template", "attributes": {
+        "name": f"{name} (auto-digest, updated {stamp} UTC)", "editor_type": "CODE", "html": html_str}}})
+    template_id = t["data"]["id"]
+    try:
+        for mid in message_ids:
+            call("POST", "campaign-message-assign-template", {"data": {"type": "campaign-message", "id": mid,
+                 "relationships": {"template": {"data": {"type": "template", "id": template_id}}}}})
+    except Exception:
+        try:
+            call("DELETE", f"templates/{template_id}")
+        except Exception:
+            pass
+        raise
+    return {"template_id": template_id, "campaign_id": campaign_id, "message_ids": message_ids,
+            "status": status, "campaign_url": f"https://www.klaviyo.com/campaign/{campaign_id}/wizard"}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dept", choices=DEPARTMENTS)
@@ -839,6 +913,8 @@ def main():
     ap.add_argument("--from-json", metavar="FILE", help="render from a saved Shopify Admin GraphQL response (tag mode)")
     ap.add_argument("--extras", metavar="FILE", help='store mode: {"blog": [...articles], "events": [...articles]}')
     ap.add_argument("--publish", action="store_true", help="create the Klaviyo DRAFT campaign (needs KLAVIYO_API_KEY env var)")
+    ap.add_argument("--update-campaign", metavar="CAMPAIGN_ID",
+                    help="instead of a new campaign, put the freshly rendered HTML on this existing DRAFT campaign (needs KLAVIYO_API_KEY)")
     ap.add_argument("--hero-style", metavar="NAME", help="force a hero background (default: rotate by date): "
                     + ", ".join(g["name"] for g in HERO_GRADIENTS))
     a = ap.parse_args()
@@ -938,6 +1014,17 @@ def main():
         manifest["klaviyo"] = result
         json_path.write_text(json.dumps(manifest, indent=2))
         print(f"\nKlaviyo : {result['status']} campaign {result['campaign_id']} -> {result['campaign_url']}")
+
+    if a.update_campaign:
+        key = os.environ.get("KLAVIYO_API_KEY")
+        if not key:
+            print("ERROR: --update-campaign given but KLAVIYO_API_KEY is not set. Files were written; nothing updated.")
+            return 2
+        manifest = json.loads(json_path.read_text())
+        result = replace_campaign_template(a.update_campaign, manifest["campaign_name"], html_path.read_text(), key)
+        manifest["klaviyo"] = result
+        json_path.write_text(json.dumps(manifest, indent=2))
+        print(f"\nKlaviyo : new template {result['template_id']} assigned to Draft campaign {result['campaign_id']} -> {result['campaign_url']}")
 
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
     if hero:

@@ -64,11 +64,34 @@ Sender: Moog Audio <nouvelles@moogaudio.com>.
 
 Flags: `--days N` widens the publish window (first run / catch-up), `--dry-run` skips state.
 
-## Dark mode
-The email is locked to light: `<meta name="color-scheme" content="light">` (Apple Mail / iOS Mail
-stop inverting) plus Outlook `[data-ogsc]`/`[data-ogsb]` overrides on `.txt-*` / `.bg-*` classes.
-Gmail apps ignore both and may still invert; left alone on purpose to avoid white-on-white.
-Simulations of what unprotected dark mode looked like: out/dark-*-preview.jpeg (local only).
+## Dark mode (since 2026-09-08)
+Two layers, because no single trick covers every client:
+
+1. **A designed dark theme** for clients that honour one. `DARK_RULES` in digest.py is emitted
+   twice: inside `@media (prefers-color-scheme: dark)` (Apple Mail, iOS Mail, Outlook iOS/Android)
+   and prefixed with `[data-ogsc]` (Outlook.com / new Outlook). Page `#0f0f0f`, body `#1c1c1c`,
+   text white, grey text `#b5b5b5`, hairlines (`.hl`) `#3a3a3a`, and every `.btn` inverts to
+   white-on-black. Things that keep their colour in both modes carry `LOCK_RULES` for Outlook:
+   hero text on the gradient (`.txt-hero`) and its black button (`.btn-hero`), white image tiles
+   (`.bg-tile`), the nav band, the red sale flag. `<meta name="color-scheme" content="light dark">`
+   is what lets Apple Mail apply the theme; set it back to `light` to lock Apple Mail to light.
+2. **Survive inversion everywhere else.** Gmail ignores layer 1 and inverts by itself (iOS flips
+   light *and* dark blocks, so buttons invert there too; Android flips only light ones, so black
+   buttons stay black with their white hairline border). The layout is built so inverting it still
+   looks intentional:
+   - the MOOG AUDIO wordmark is live text, not a white JPEG, so it flips with its background;
+   - image-only cells (hero product card, product shots, payment logos, Patch Rewards, social
+     icons) are locked white with `WHITE_LOCK` (`background-image: linear-gradient(#fff,#fff)`,
+     which Gmail does not recolour). Never put text inside a WHITE_LOCK cell — Gmail would still
+     lighten it;
+   - black buttons carry a 1px white border: invisible on white, keeps them visible after a
+     partial invert;
+   - category links are `#9a9a9a` (the old `#c1c1c1` became unreadable once inverted).
+
+Known limit: Gmail turns the black hero text on the gradient white (it did before too). Kept by
+decision on 2026-09-08 — the hero layout stays as designed.
+
+Previews: out/today-light.jpeg, out/today-dark-*.jpeg (local only).
 
 ## Hero background rotation
 The "Pick of the Week" block rotates through five gradients (peach-coral, gold-amber,
