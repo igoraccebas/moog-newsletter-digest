@@ -1287,7 +1287,8 @@ def run_hot(a, d, keep, sold_out, noise, now):
     keep = sorted(keep, key=lambda p: p.get("published_at") or "9999", reverse=True)
     product, queued = keep[0], keep[1:]
     live = bool(product.get("published_at")) and (product.get("status") or "ACTIVE") == "ACTIVE"
-    product.setdefault("published_at", now.isoformat())     # group() sorts on it
+    if not product.get("published_at"):
+        product["published_at"] = now.isoformat()            # group() sorts on it; None would crash
     card = group([product])[0]
     extras = load_extras(a.extras)
     h1, sub = split_title(card["title"], card["vendor"], card.get("type") or "")
