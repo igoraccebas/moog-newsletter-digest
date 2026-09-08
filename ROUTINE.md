@@ -31,3 +31,21 @@ failed with "Tunnel connection failed: 403 Forbidden" until egress was opened.
 
 Required environment secret: KLAVIYO_API_KEY (private key, scopes: campaigns read/write,
 templates read/write).
+
+---
+
+# Cloud routine — "Product Launch" (hourly, tag `newsletter-hot`)
+
+Second routine, same environment, connectors and Klaviyo secret as the weekly one. Prompt:
+ROUTINE_HOT_PROMPT.md. Cron `0 * * * *` (every hour at :00, UTC — no DST issue because it runs
+around the clock; narrow it to business hours by editing the cron, e.g. `0 11-23,0-2 * * *` for
+7am–10pm Toronto in summer).
+
+- Runs ~24 times a day; when nothing is tagged it ends quietly with no notification.
+- When a product is tagged: Draft in Klaviyo → added to New Releases → tag removed →
+  ONE PushNotification "Launch draft ready - <product>". Igor reviews and sends by hand.
+- One product per run; extra tagged products wait for the following hours
+  (manifest field `queued_for_next_run`).
+- Cloud routines cannot run more often than hourly, so the delay between tagging and the
+  draft is 0–60 minutes (Igor accepted this on 2026-09-08 over a 10–30 min GitHub Actions /
+  Make.com alternative that would have needed a Shopify Admin API token).

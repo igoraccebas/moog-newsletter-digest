@@ -60,6 +60,10 @@ DEPARTMENTS = {
     "store":   {"handle": "newreleases", "label": "This Week's Picks", "short": "new releases",
                 "eyebrow": "New at Moog Audio", "tag": "newsletter", "weekday": "Tuesday & Friday",
                 "title": "This Week's Picks", "subject_lead": "New at Moog Audio"},
+    # single-product launch e-mail, hourly, tag-driven (newsletter-hot). One product per run.
+    "hot":     {"handle": "newreleases", "label": "Product Launch", "short": "launch",
+                "eyebrow": "It's finally here", "tag": "newsletter-hot", "weekday": "hourly",
+                "title": "Product Launch", "subject_lead": "It's here"},
     # department collections (kept for reference / fallback)
     "dj":      {"handle": "dj-equipment-new",        "label": "DJ Equipment", "short": "DJ gear",     "weekday": "Monday"},
     "modular": {"handle": "new-modular-synthesizers", "label": "Modular",      "short": "modular gear","weekday": "Wednesday"},
@@ -67,6 +71,16 @@ DEPARTMENTS = {
 }
 TAG = "newsletter"        # queues a product for the "Also New This Week" list
 TAG_HERO = "newsletter-hero"  # marks the single "Pick of the Week" hero
+TAG_HOT = "newsletter-hot"    # queues ONE product for the Product Launch e-mail (hourly routine)
+# Product Launch e-mail (design: claude.ai/design "Product Launch Email"). Whole body sits on a coral
+# gradient; hosted PNG because CSS gradients do not render in Outlook / Gmail Android. Copy lines
+# below are static marketing copy from the design — edit freely.
+LAUNCH_BG = {"solid": "#f86726",
+             "image": KL_IMG + "1810eefe-5c37-410a-a2fa-aa3d16ea803d.png",   # assets/launch-coral.png, 600x1600, hosted on Klaviyo
+             "gradient": "linear-gradient(160deg,#fdbb8f 0%,#f86726 30%,#eabf7c 58%,#ffe2d8 82%,#d5ddda 100%)"}
+LAUNCH_NOTE = "Limited first allocation — orders are filled in sequence."
+LAUNCH_BAND = "Want to try it first? Come see it at the Boutique — 3828 St Laurent Blvd, Montreal."
+SAND = "#eabf7c"
 BLOG_URL, EVENTS_URL = "/blogs/news", "/blogs/events"
 # Every product that goes into the email is also added to this manual collection (Admin collectionAddProducts)
 NEW_RELEASES_COLLECTION = {"handle": "newreleases", "id": "gid://shopify/Collection/306490671293"}
@@ -118,6 +132,8 @@ DARK_RULES = [
 ]
 LOCK_RULES = [   # same in light and dark; only needed because Outlook recolours on its own
     ("[data-ogsb] .bg-tile", "background-color:#ffffff!important"),
+    ("[data-ogsb] .bg-launch", "background-color:#f86726!important"),
+    ("[data-ogsc] .txt-sand", "color:#eabf7c!important"),
     ("[data-ogsb] .bg-nav,[data-ogsb] .bg-band,[data-ogsb] .btn-hero", "background-color:#000000!important"),
     ("[data-ogsb] .bg-red", "background-color:#c1272d!important"),
     ("[data-ogsc] .txt-hero,[data-ogsc] .txt-hero a", "color:#000000!important"),
@@ -133,6 +149,8 @@ LOCK_RULES = [   # same in light and dark; only needed because Outlook recolours
 DARK_MODE = "lock-light"
 LIGHT_LOCK_RULES = [   # Outlook.com / new Outlook re-assert the light design in their dark mode
     ("[data-ogsb] .bg-page", "background-color:#ececec!important"),
+    ("[data-ogsb] .bg-launch", "background-color:#f86726!important"),
+    ("[data-ogsc] .txt-sand", "color:#eabf7c!important"),
     ("[data-ogsb] .bg-body,[data-ogsb] .bg-tile", "background-color:#ffffff!important"),
     ("[data-ogsb] .bg-nav,[data-ogsb] .bg-band,[data-ogsb] .btn,[data-ogsb] .btn-hero", "background-color:#000000!important"),
     ("[data-ogsb] .bg-red", "background-color:#c1272d!important"),
@@ -178,6 +196,8 @@ MOBILE_CSS = (
     " .m-legal{font-size:12px!important;line-height:17px!important;}"
     " .m-full{width:100%!important;max-width:100%!important;height:auto!important;}"
     " .m-logo{font-size:24px!important;line-height:30px!important;letter-spacing:4px!important;}"
+    " .m-launch-h1{font-size:30px!important;line-height:34px!important;}"
+    " .m-pad{padding-left:20px!important;padding-right:20px!important;}"
     "}")
 # Noise rules (applied to every department). Tweak freely.
 EXCLUDE_TYPES = {"Parts"}
@@ -212,13 +232,15 @@ def normalize_admin(node):
                          "compare_at_price": cmp_ if cmp_ and float(cmp_) > 0 else None,
                          "available": bool(v.get("availableForSale"))})
     img = (node.get("featuredImage") or {}).get("url")
+    gallery = [n.get("url") for n in (node.get("images") or {}).get("nodes", []) if n.get("url")]
+    ordered = ([img] if img else []) + [u for u in gallery if u != img]   # featured first, then the rest
     return {
         "id": int(str(node["id"]).rsplit("/", 1)[-1]), "admin_id": node["id"],
         "title": node["title"], "handle": node["handle"], "vendor": node.get("vendor") or "",
         "product_type": node.get("productType") or "", "tags": node.get("tags") or [],
         "published_at": node.get("publishedAt"), "status": node.get("status"),
         "body_html": node.get("descriptionHtml") or "",
-        "images": [{"src": img}] if img else [], "variants": variants,
+        "images": [{"src": u} for u in ordered], "variants": variants,
     }
 
 
@@ -276,6 +298,80 @@ TIME_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|h)\b", re.I)
 
 META_DESC_RE = re.compile(r'<meta[^>]+(?:property="og:description"|name="description")[^>]+content="([^"]*)"', re.I)
 _META_CACHE = {}
+
+
+def img_url(src, **params):
+    """Append Shopify CDN resize params (width, height, crop) to an image URL."""
+    return src + ("&" if "?" in src else "?") + "&".join(f"{k}={v}" for k, v in params.items())
+
+
+def split_title(title, vendor="", product_type=""):
+    """Headline / sub-line for the launch e-mail.
+    'Morphor Echon 6 Analog Polyphonic BBD Synthesizer' -> ('Morphor Echon 6', 'Analog Polyphonic BBD Synthesizer')
+    Rules: split on ' - ' first; else right after the first model-number token (contains a digit);
+    else the whole title, with the product type as sub-line."""
+    parts = re.split(r"\s+[-–]\s+", title, maxsplit=1)
+    if len(parts) == 2 and 3 <= len(parts[0]) <= 40 and parts[1].strip():
+        return parts[0].strip(), parts[1].strip()
+    toks = title.split()
+    for i, t in enumerate(toks):
+        if 1 <= i <= 4 and re.search(r"\d", t):
+            head, tail = " ".join(toks[:i + 1]), " ".join(toks[i + 1:])
+            if tail:
+                return head, tail
+            break
+    return title, (product_type or "")
+
+
+def long_blurb(body_html, title, limit=480, min_len=120):
+    """Two-ish paragraphs of the product description (no bullet lists, no headings, no title line),
+    cut at a sentence boundary near `limit`."""
+    body = re.sub(r"<(ul|ol|table)[^>]*>.*?</\1>", " ", body_html or "", flags=re.S | re.I)
+    body = re.sub(r"<h\d[^>]*>.*?</h\d>", " ", body, flags=re.S | re.I)
+    title_t = _tokens(title)
+    paras = []
+    for raw in re.split(r"</p>|<br\s*/?>|</div>", body, flags=re.I):
+        t = html.unescape(re.sub(r"\s+", " ", TAG_RE.sub(" ", raw))).strip()
+        if len(t) < 40:
+            continue
+        toks = _tokens(t)
+        if toks and len(toks & title_t) / len(toks) > 0.6:          # the title repeated as a line
+            continue
+        if re.match(r"^(key\s+)?(features?|specifications?|specs|highlights?)\b", t, re.I):
+            continue
+        paras.append(t)
+    text = ""
+    for p in paras:
+        if not text:
+            text = p
+        elif len(text) + 1 + len(p) <= limit:
+            text += " " + p
+        else:
+            break
+    if len(text) > limit:
+        cut = text[:limit]
+        end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+        text = cut[:end + 1] if end >= min_len else cut.rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return text
+
+
+def spec_rows(body_html, limit=6):
+    """Rows for the SPECIFICATIONS box, from the first bullet list in the description.
+    'Voices: 6-voice analog' -> ('Voices', '6-voice analog'); a bullet without 'Label: value'
+    shape becomes ('', bullet) and is rendered full-width."""
+    items = []
+    for lst in re.findall(r"<(?:ul|ol)[^>]*>(.*?)</(?:ul|ol)>", body_html or "", flags=re.S | re.I):
+        for li in re.findall(r"<li[^>]*>(.*?)</li>", lst, flags=re.S | re.I):
+            t = html.unescape(re.sub(r"\s+", " ", TAG_RE.sub(" ", li))).strip(" .;•·-–")
+            if 3 <= len(t) <= 160:
+                items.append(t)
+        if items:
+            break
+    rows = []
+    for t in items[:limit]:
+        m = re.match(r"^([^:–—]{2,28}?)\s*[:–—]\s+(.+)$", t)
+        rows.append((m.group(1).strip(), m.group(2).strip()) if m else ("", t))
+    return rows
 
 
 def fetch_meta_description(url):
@@ -824,6 +920,224 @@ def render_picks(cards, hero, extras, week_label, style=None):
 </html>"""
 
 
+def render_launch(card, product, extras):
+    """Single-product 'Product Launch' e-mail (claude.ai/design 'Product Launch Email').
+    Whole body on the coral gradient; black header bar; headline/sub-line; main image card; up to three
+    gallery thumbnails (row omitted when the product has only one image); description; SPECIFICATIONS
+    box from the description's bullet list; price + CTA; boutique band; then the standard white footer
+    (blog, events, value props, payments, rewards, socials, legal). Same dark-mode classes as the digest."""
+    utm = "utm_source=klaviyo&utm_medium=email&utm_campaign=product-launch"
+    def link(path):
+        return f"{STORE}{path}" + ("&" if "?" in path else "?") + utm
+    esc = html.escape
+    url = card["url"] + "?" + utm
+    h1, sub = split_title(card["title"], card["vendor"], card.get("type") or "")
+    h1_size = 40 if len(h1) <= 22 else (32 if len(h1) <= 34 else 26)
+    body_html = product.get("body_html", "")
+    images = [i["src"] for i in product.get("images", []) if i.get("src")] or [card["image"]]
+    main_img, thumbs = images[0], images[1:4]
+    blurb = long_blurb(body_html, card["title"])
+    rows = spec_rows(body_html)
+    labeled = sum(1 for lbl, _ in rows if lbl)
+    spec_title = "SPECIFICATIONS" if rows and labeled * 2 >= len(rows) else "KEY FEATURES"
+    perks = "Financing available at checkout" + (" &middot; Free shipping" if card["_price_num"] >= 199 else "")
+    price_line = esc(card["price"]) + (f' <span class="txt-grey" style="color:{GREY_TXT};text-decoration:line-through;font-size:14px;font-weight:normal">{esc(card["compare"])}</span>'
+                                       if card.get("compare") else "")
+    first_sentence = re.split(r"(?<=[.!?])\s", blurb, maxsplit=1)[0] if blurb else ""
+    preheader = f"It's here: the {h1}. {first_sentence}".strip()
+    bg = LAUNCH_BG
+    bg_attr = f' background="{bg["image"]}"' if bg["image"] else ""
+    bg_css = (f"background-image:url({bg['image']});background-size:cover;background-position:center top;background-repeat:no-repeat;"
+              if bg["image"] else f"background-image:{bg['gradient']};")
+    btn = f"display:block;font-size:13px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:{WHITE};text-decoration:none;"
+
+    thumbs_html = ""
+    if thumbs:
+        n = len(thumbs)
+        tw = {1: 300, 2: 236, 3: 158}[n]
+        th = round(tw * 0.65)
+        cells = []
+        for i, t in enumerate(thumbs):
+            if i:
+                cells.append('<td width="11" style="width:11px;font-size:1px;line-height:1px">&nbsp;</td>')
+            cells.append(f'<td class="thumb bg-tile" bgcolor="{WHITE}" align="center" valign="middle" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:6px">'
+                         f'<a href="{url}" style="display:block"><img src="{img_url(t, width=tw * 2, height=th * 2, crop="center")}" width="{tw}" alt="{esc(card["title"])} — view {i + 2}" '
+                         f'style="display:block;width:100%;max-width:{tw}px;height:auto;border:0;margin:0 auto"></a></td>')
+        thumbs_html = f"""
+  <tr><td align="center" class="m-pad" style="padding:12px 32px 0 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{"".join(cells)}</tr></table>
+  </td></tr>"""
+
+    spec_html = ""
+    if rows:
+        trs = []
+        for i, (label, value) in enumerate(rows):
+            border = "" if i == len(rows) - 1 else f"border-bottom:1px solid {HAIRLINE};"
+            if label:
+                trs.append(f'<tr><td width="170" valign="top" class="m-small txt-black hl" style="width:170px;padding:12px 0 12px 20px;font-size:12px;line-height:18px;font-weight:bold;color:{BLACK};{border}">{esc(label)}</td>'
+                           f'<td valign="top" class="m-small txt-black hl" style="padding:12px 20px;font-size:12px;line-height:18px;color:{BLACK};{border}">{esc(value)}</td></tr>')
+            else:
+                trs.append(f'<tr><td colspan="2" valign="top" class="m-small txt-black hl" style="padding:12px 20px;font-size:12px;line-height:18px;color:{BLACK};{border}">{esc(value)}</td></tr>')
+        spec_html = f"""
+  <tr><td class="m-pad" style="padding:28px 32px 0 32px">
+    <table role="presentation" class="bg-body" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="{WHITE}" style="width:100%;background-color:{WHITE};border:1px solid {BLACK}">
+      <tr><td colspan="2" bgcolor="{BLACK}" class="bg-nav txt-white" style="background:{BLACK};padding:12px 20px;font-size:11px;font-weight:bold;letter-spacing:2px;color:{WHITE}">{spec_title}</td></tr>
+      {"".join(trs)}
+    </table>
+  </td></tr>"""
+
+    blurb_html = (f"""
+  <tr><td class="m-pad" style="padding:30px 32px 0 32px">
+    <div class="m-body txt-hero" style="font-size:15px;line-height:23px;color:{BLACK}">{esc(blurb)}</div>
+  </td></tr>""" if blurb else "")
+
+    def section_head(title, link_text, href, pad_top=32):
+        return f"""
+  <tr><td style="padding:{pad_top}px 24px 8px 24px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+      <td class="m-section txt-black" style="font-size:18px;font-weight:bold;color:{BLACK}">{title}</td>
+      <td align="right" class="m-label txt-black" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{href}" style="color:{BLACK};text-decoration:underline">{link_text}</a></td>
+    </tr></table>
+  </td></tr>"""
+
+    blog_html = ""
+    posts = extras.get("blog", [])[:2]
+    if posts:
+        def post_cell(a, last):
+            img = (a.get("image") or {}).get("url")
+            purl = article_url(a) + "?" + utm
+            pic = (f'<a href="{purl}"><img src="{img}&width=536" width="268" alt="{esc(a["title"])}" class="m-full" style="display:block;width:100%;max-width:268px;height:auto;border:0"></a>'
+                   if img else f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="268"><tr><td height="140" bgcolor="#f4f4f4" style="background:#f4f4f4"></td></tr></table>')
+            pad = "" if last else "padding-right:16px;"
+            return f"""
+      <td class="stack stack-img" width="268" valign="top" style="width:268px;{pad}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="268" style="width:100%">
+          <tr><td>{pic}</td></tr>
+          <tr><td class="m-title txt-black" style="padding:12px 0 4px 0;font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{purl}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></td></tr>
+          <tr><td class="m-small txt-grey" style="font-size:13px;line-height:18px;color:{GREY_TXT}">{esc(article_teaser(a))}</td></tr>
+        </table>
+      </td>"""
+        cells = "".join(post_cell(a, i == len(posts) - 1) for i, a in enumerate(posts))
+        blog_html = section_head("From the Blog", "ALL POSTS", link(BLOG_URL)) + f"""
+  <tr><td style="padding:16px 24px 12px 24px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{cells}
+    </tr></table>
+  </td></tr>"""
+
+    events_html = ""
+    events = extras.get("events", [])[:3]
+    if events:
+        def event_row(a, first):
+            eurl = article_url(a) + "?" + utm
+            date_label, time_label = event_when(a)
+            when = (f'{esc(date_label)}' + (f'<br><span class="txt-grey" style="font-weight:normal;color:{GREY_TXT}">{esc(time_label)}</span>' if time_label else "")) if date_label else ""
+            when_cell = (f'<td width="90" valign="top" class="txt-coral" style="width:90px;font-size:12px;line-height:17px;font-weight:bold;color:{CORAL};letter-spacing:1px;padding-right:16px">{when}</td>'
+                         if when else "")
+            top = f"border-top:1px solid {HAIRLINE};" if first else ""
+            return f"""
+      <tr><td class="hl" style="padding:14px 0;{top}border-bottom:1px solid {HAIRLINE}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+          {when_cell}
+          <td valign="top">
+            <div class="m-title txt-black" style="font-size:15px;line-height:20px;font-weight:bold;color:{BLACK}"><a href="{eurl}" style="color:{BLACK};text-decoration:none">{esc(a['title'])}</a></div>
+            <div class="m-small txt-grey" style="font-size:13px;line-height:18px;color:{GREY_TXT};margin-top:4px">{esc(article_teaser(a))}</div>
+          </td>
+          <td align="right" valign="middle" width="80"><a href="{eurl}" class="txt-black" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{BLACK};text-decoration:underline">RSVP</a></td>
+        </tr></table>
+      </td></tr>"""
+        erows = "".join(event_row(a, i == 0) for i, a in enumerate(events))
+        events_html = section_head("Upcoming Events", "ALL EVENTS", link(EVENTS_URL), pad_top=24) + f"""
+  <tr><td style="padding:16px 24px 12px 24px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">{erows}
+    </table>
+  </td></tr>"""
+
+    social = ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>'
+              + "".join(f'<td align="center" valign="middle" style="padding:0 7px;line-height:0;font-size:0"><a href="{u}" style="text-decoration:none;display:block;line-height:0">'
+                        f'<img src="{img}" width="25" height="25" alt="{alt}" style="display:block;border:0;width:25px;height:25px"></a></td>'
+                        for u, img, alt in SOCIAL)
+              + '</tr></table>')
+
+    return f"""<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="{color_scheme_meta()}">
+<meta name="supported-color-schemes" content="{color_scheme_meta()}">
+<title>{esc(h1)}</title>
+<style>{MOBILE_CSS}{dark_css()}</style>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+</head>
+<body class="bg-page" style="margin:0;padding:0;background:#ececec;-webkit-text-size-adjust:100%;">
+<div class="bg-page" style="background:#ececec;padding:24px 0;font-family:Helvetica,Arial,sans-serif">
+<span style="display:none;font-size:1px;color:#ececec;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden">{esc(preheader)}</span>
+<table role="presentation" class="bg-launch" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" bgcolor="{bg['solid']}"{bg_attr} style="width:100%;max-width:600px;margin:0 auto;background-color:{bg['solid']};{bg_css}">
+  <tr><td align="center" class="txt-hero" style="padding:10px 0 4px 0;font-size:10px;color:{BLACK}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
+  <tr><td bgcolor="{BLACK}" class="bg-nav m-pad" style="background:{BLACK};padding:16px 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+      <td class="txt-white" style="font-size:18px;font-weight:bold;color:{WHITE};letter-spacing:2px"><a href="{link('/')}" style="color:{WHITE};text-decoration:none">MOOG&nbsp;AUDIO</a></td>
+      <td align="right" class="m-label txt-sand" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{SAND}">PRODUCT LAUNCH</td>
+    </tr></table>
+  </td></tr>
+  <tr><td align="center" class="m-pad" style="padding:44px 32px 10px 32px">
+    <div class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:3px;text-transform:uppercase;color:{BLACK}">{esc(DEPARTMENTS['hot']['eyebrow'])}</div>
+    <h1 class="m-launch-h1 txt-hero" style="margin:12px 0 0 0;font-size:{h1_size}px;line-height:{h1_size + 4}px;font-weight:bold;letter-spacing:-0.5px;color:{BLACK}">{esc(h1)}</h1>
+    {f'<div class="m-intro txt-hero" style="margin-top:10px;font-size:15px;line-height:22px;color:{BLACK}">{esc(sub)}</div>' if sub else ''}
+  </td></tr>
+  <tr><td align="center" class="m-pad" style="padding:26px 32px 0 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+      <td bgcolor="{WHITE}" class="bg-tile" align="center" valign="middle" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:20px 0">
+        <a href="{url}" style="display:block"><img src="{img_url(main_img, width=960)}" width="480" alt="{esc(card['title'])}" style="display:block;width:100%;max-width:480px;height:auto;border:0;margin:0 auto"></a>
+      </td>
+    </tr></table>
+  </td></tr>{thumbs_html}{blurb_html}{spec_html}
+  <tr><td align="center" class="m-pad" style="padding:30px 32px 8px 32px">
+    <div class="m-hero-title txt-hero" style="font-size:22px;font-weight:bold;color:{BLACK}">{price_line}</div>
+    <div class="m-small txt-hero" style="margin-top:4px;font-size:12px;color:{BLACK}">{perks}</div>
+  </td></tr>
+  <tr><td align="center" style="padding:12px 32px 8px 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
+      <td bgcolor="{BLACK}" class="btn-hero" style="background:{BLACK}"><a href="{url}" class="m-btn txt-white" style="{btn}padding:16px 40px;">Shop Now</a></td>
+    </tr></table>
+  </td></tr>
+  <tr><td align="center" class="m-small txt-hero m-pad" style="padding:4px 32px 40px 32px;font-size:12px;color:{BLACK}">{esc(LAUNCH_NOTE)}</td></tr>
+  <tr><td bgcolor="{BLACK}" class="bg-band m-pad" style="background:{BLACK};padding:26px 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+      <td class="stack stack-img m-body txt-white" style="font-size:13px;line-height:19px;color:{WHITE};padding-right:16px">{esc(LAUNCH_BAND)}</td>
+      <td align="right" width="140" class="stack" style="padding-top:0">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right" class="stack"><tr>
+          <td style="border:1px solid {WHITE}"><a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" class="m-label txt-white" style="display:block;padding:10px 20px;font-size:11px;font-weight:bold;letter-spacing:1px;color:{WHITE};text-decoration:none;text-align:center">GET DIRECTIONS</a></td>
+        </tr></table>
+      </td>
+    </tr></table>
+  </td></tr>
+  <tr><td bgcolor="{WHITE}" class="bg-body" style="background:{WHITE}">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">{blog_html}{events_html}
+  <tr><td class="hl" style="padding:16px 24px 0 24px;border-bottom:1px solid {HAIRLINE}">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+      <td class="stack m-small txt-black" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-right:16px;padding-bottom:16px"><span style="font-weight:bold">Free shipping.</span> We offer Free Shipping on most orders over 199$. Conditions may apply.</td>
+      <td class="stack m-small txt-black" width="268" valign="top" style="font-size:13px;line-height:18px;color:{BLACK};padding-bottom:16px"><span style="font-weight:bold">Rewards.</span> For each dollar spent, earn one reward point which you can use as a discount for your future purchases.</td>
+    </tr></table>
+  </td></tr>
+  <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}padding:28px 0 6px 0"><img src="{IMG_PAYMENTS}" width="600" alt="Affirm, Flexiti and PayPlan by RBC financing" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr>
+  <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}padding:6px 0 10px 0"><a href="{link('/pages/reward')}"><img src="{IMG_REWARDS}" width="600" alt="Patch Rewards: earn points every time you shop, connect and review" style="display:block;width:100%;max-width:600px;height:auto;border:0"></a></td></tr>
+  <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}padding:10px 0 22px 0;line-height:0;font-size:0">{social}</td></tr>
+  <tr><td align="center" class="m-small txt-black" style="padding:0 24px 12px 24px;font-size:13px;line-height:19px;color:{BLACK}">
+    <a href="{link('/')}" style="color:{BLACK};font-weight:700;text-decoration:underline">moogaudio.com</a><br>
+    <a href="https://maps.google.com/?q=3828+St+Laurent+Blvd+Montreal+QC+H2W+1X6" style="color:{BLACK};text-decoration:underline">{ADDRESS}</a>
+  </td></tr>
+  <tr><td class="m-legal txt-grey" style="padding:8px 24px 16px 24px;font-size:11px;line-height:16px;color:{GREY_TXT};text-align:justify">{esc(AFFIRM_LEGAL)}</td></tr>
+  <tr><td align="center" class="m-small txt-black" style="padding:6px 24px 32px 24px;font-size:12px;line-height:18px;color:{BLACK}">No longer want to receive these emails? <a href="{{% manage_preferences_link %}}" style="color:{BLACK};text-decoration:underline">Manage Preferences</a> | <a href="{{% unsubscribe_link %}}" style="color:{BLACK};text-decoration:underline">Unsubscribe</a></td></tr>
+    </table>
+  </td></tr>
+</table>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" style="width:100%;max-width:600px;margin:0 auto"><tr><td height="24" style="font-size:1px;line-height:1px">&nbsp;</td></tr></table>
+</div>
+</body>
+</html>"""
+
+
 def short_name(title, limit=34):
     head = re.split(r"\s+[-–]\s+", title)[0].strip()
     if len(head) <= limit:
@@ -931,6 +1245,85 @@ def replace_campaign_template(campaign_id, name, html_str, api_key):
             "status": status, "campaign_url": f"https://www.klaviyo.com/campaign/{campaign_id}/wizard"}
 
 
+def klaviyo_step(a, json_path, html_path):
+    """--publish / --update-campaign for an already rendered e-mail. Returns a non-zero exit code on error."""
+    if not (a.publish or a.update_campaign):
+        return 0
+    key = os.environ.get("KLAVIYO_API_KEY")
+    if not key:
+        print("ERROR: --publish/--update-campaign given but KLAVIYO_API_KEY is not set. Files were written; nothing published.")
+        return 2
+    manifest = json.loads(json_path.read_text())
+    if a.publish:
+        result = publish_klaviyo(manifest, html_path.read_text(), key)
+        print(f"\nKlaviyo : {result['status']} campaign {result['campaign_id']} -> {result['campaign_url']}")
+    else:
+        result = replace_campaign_template(a.update_campaign, manifest["campaign_name"], html_path.read_text(), key)
+        print(f"\nKlaviyo : new template {result['template_id']} assigned to Draft campaign {result['campaign_id']} -> {result['campaign_url']}")
+    manifest["klaviyo"] = result
+    json_path.write_text(json.dumps(manifest, indent=2))
+    return 0
+
+
+def run_hot(a, d, keep, sold_out, noise, now):
+    """Product Launch e-mail: exactly one product per run (the most recently published one tagged
+    newsletter-hot); any others stay tagged and go out on the following runs."""
+    if not a.from_json:
+        print("ERROR: 'hot' needs --from-json (Admin GraphQL response of products tagged newsletter-hot).")
+        return 2
+    if not keep:
+        print(f"Product Launch: nothing purchasable tagged {TAG_HOT}. No file written.")
+        for p in sold_out:
+            print(f"  sold out: {p['title']}")
+        for p in noise:
+            print(f"  noise:    {p['title']}  [{p.get('product_type')}]")
+        return 0
+    keep = sorted(keep, key=lambda p: p.get("published_at") or "", reverse=True)
+    product, queued = keep[0], keep[1:]
+    card = group([product])[0]
+    extras = load_extras(a.extras)
+    h1, sub = split_title(card["title"], card["vendor"], card.get("type") or "")
+    blurb = long_blurb(product.get("body_html", ""), card["title"])
+    first_sentence = re.split(r"(?<=[.!?])\s", blurb, maxsplit=1)[0] if blurb else ""
+    subject = f"{d['subject_lead']}: {h1}" + (f" — {sub}" if sub and len(h1) + len(sub) <= 58 else "")
+    preview = f"{h1} has landed at Moog Audio. {first_sentence}".strip()
+    if len(preview) > 140:
+        preview = preview[:137].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    stamp = now.strftime("%Y-%m-%d")
+    slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
+    html_path, json_path = OUT / f"hot-{stamp}-{slug}.html", OUT / f"hot-{stamp}-{slug}.json"
+    html_path.write_text(render_launch(card, product, extras))
+    day_label = now.astimezone(dt.timezone(dt.timedelta(hours=-4))).strftime("%b %-d")
+    images = [i["src"] for i in product.get("images", []) if i.get("src")]
+    json_path.write_text(json.dumps({
+        "dept": "hot", "label": d["label"], "generated_at": now.isoformat(),
+        "subject": subject, "preview_text": preview, "campaign_name": f"Product Launch · {h1} · {day_label}",
+        "tags": [TAG_HOT],
+        "untag": [{"id": i, "tags": [TAG_HOT]} for i in card.get("admin_ids", [])],
+        "add_to_collection": {**NEW_RELEASES_COLLECTION, "product_ids": list(card.get("admin_ids", []))},
+        "product": {"headline": h1, "subline": sub, "vendor": card["vendor"], "title": card["title"],
+                    "price": card["price"], "compare": card["compare"], "url": card["url"],
+                    "images": images, "thumbnails": len(images[1:4]), "specs": spec_rows(product.get("body_html", "")),
+                    "blurb": blurb},
+        "queued_for_next_run": [{"id": p.get("admin_id"), "title": p["title"]} for p in queued],
+        "blog": [{"title": x["title"], "url": article_url(x)} for x in extras["blog"][:2]],
+        "events": [{"title": x["title"], "url": article_url(x), "when": event_when(x)} for x in extras["events"][:3]],
+    }, indent=2))
+    rc = klaviyo_step(a, json_path, html_path)
+    if rc:
+        return rc
+    print(f"Product Launch: {len(keep)} tagged {TAG_HOT}, featuring the most recent; {len(queued)} left for later runs")
+    print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
+    print(f"  PRODUCT {card['vendor']} | {h1} | {sub} | {card['price']} | {len(images)} image(s) | {len(spec_rows(product.get('body_html', '')))} spec rows")
+    for p in queued:
+        print(f"  queued: {p['title']}")
+    if extras["blog"]:
+        print("  blog:   " + " / ".join(x["title"] for x in extras["blog"][:2]))
+    if extras["events"]:
+        print("  events: " + " / ".join(f"{x['title']} [{event_when(x)[0] or 'no date'}]" for x in extras["events"][:3]))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dept", choices=DEPARTMENTS)
@@ -968,6 +1361,8 @@ def main():
     sold_out = [p for p in fresh if not is_purchasable(p)]
     noise = [p for p in fresh if is_purchasable(p) and is_noise(p)]
     keep = [p for p in fresh if is_purchasable(p) and not is_noise(p)]
+    if a.dept == "hot":
+        return run_hot(a, d, keep, sold_out, noise, now)
     hero = None
     if a.dept == "store":
         heroes = [p for p in keep if TAG_HERO in p.get("tags", [])]
@@ -1030,27 +1425,9 @@ def main():
         state["last_run"] = now.isoformat()
         state_file.write_text(json.dumps(state, indent=2))
 
-    if a.publish:
-        key = os.environ.get("KLAVIYO_API_KEY")
-        if not key:
-            print("ERROR: --publish given but KLAVIYO_API_KEY is not set. Files were written; nothing published.")
-            return 2
-        manifest = json.loads(json_path.read_text())
-        result = publish_klaviyo(manifest, html_path.read_text(), key)
-        manifest["klaviyo"] = result
-        json_path.write_text(json.dumps(manifest, indent=2))
-        print(f"\nKlaviyo : {result['status']} campaign {result['campaign_id']} -> {result['campaign_url']}")
-
-    if a.update_campaign:
-        key = os.environ.get("KLAVIYO_API_KEY")
-        if not key:
-            print("ERROR: --update-campaign given but KLAVIYO_API_KEY is not set. Files were written; nothing updated.")
-            return 2
-        manifest = json.loads(json_path.read_text())
-        result = replace_campaign_template(a.update_campaign, manifest["campaign_name"], html_path.read_text(), key)
-        manifest["klaviyo"] = result
-        json_path.write_text(json.dumps(manifest, indent=2))
-        print(f"\nKlaviyo : new template {result['template_id']} assigned to Draft campaign {result['campaign_id']} -> {result['campaign_url']}")
+    rc = klaviyo_step(a, json_path, html_path)
+    if rc:
+        return rc
 
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
     if hero:

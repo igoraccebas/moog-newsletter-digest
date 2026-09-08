@@ -35,6 +35,40 @@ Weekly "new arrivals" email per department, built from Shopify and left as a
 Department collection mode (`dj`, `modular`, `guitar`) still works as a fallback:
 `python3 digest.py dj --days 7`.
 
+## Product Launch e-mail — `hot` mode (hourly, since 2026-09-08)
+
+One product, one e-mail, whenever the team wants it out. Tag a product `newsletter-hot` in Shopify;
+the hourly cloud routine (see ROUTINE.md, prompt in ROUTINE_HOT_PROMPT.md) picks it up on the next
+run, creates a Klaviyo **draft**, adds the product to New Releases and removes the tag. Nothing is
+ever sent automatically. If several products carry the tag, the most recently published one goes
+out and the others stay tagged for the following runs (one per hour).
+
+Design: claude.ai/design "Product Launch Email" (Igor, 2026-09-08). Layout, top to bottom:
+coral gradient body (hosted PNG `assets/launch-coral.png`, generated with `make_gradient.py`),
+black header bar (MOOG AUDIO / PRODUCT LAUNCH), eyebrow "It's finally here", headline + sub-line,
+main product image on a white card, **up to three gallery thumbnails** (row omitted when the
+product has a single image; 1–3 tiles adapt in width), description, **SPECIFICATIONS** box,
+price + "Financing available at checkout · Free shipping" (free shipping only from 199$),
+SHOP NOW, a one-line note, the Boutique band, then the standard white footer (blog, events,
+value props, payments, rewards, socials, legal).
+
+Where the content comes from — all from the Shopify product, nothing hand-written per e-mail:
+- headline / sub-line: `split_title()` — split on " - " if the title has one, else right after the
+  first model-number token ("Morphor Echon 6" | "Analog Polyphonic BBD Synthesizer"); otherwise the
+  whole title with the product type as sub-line.
+- images: `featuredImage` first, then the next three of `images(first: 4)`; thumbnails are
+  centre-cropped by the Shopify CDN so the tiles line up.
+- description: `long_blurb()` — the first paragraphs of the description (no headings, no lists,
+  no repeated title line), cut at a sentence end near 480 characters.
+- specifications: `spec_rows()` — the first bullet list in the description, max six items.
+  "Label: value" bullets render as two columns and the box is titled SPECIFICATIONS; plain bullets
+  render full-width under KEY FEATURES; no list at all → no box.
+- static copy lines live in `LAUNCH_NOTE` and `LAUNCH_BAND` in digest.py.
+
+Run by hand: `python3 digest.py hot --from-json out/hot.json --extras out/extras.json [--publish] [--dry-run]`
+(`out/hot-test.json` is a saved sample). Output: `out/hot-<date>-<slug>.html/.json`.
+Subject: "It's here: <headline> — <sub-line>"; the manifest also lists `queued_for_next_run`.
+
 ## Departments & schedule
 
 | key     | Shopify collection            | digest day |
