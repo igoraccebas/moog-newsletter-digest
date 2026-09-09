@@ -345,6 +345,9 @@ def long_blurb(body_html, title, limit=480, min_len=120):
             continue
         if re.match(r"^(key\s+)?(features?|specifications?|specs|highlights?)\b", t, re.I):
             continue
+        letters = [c for c in t if c.isalpha()]
+        if letters and sum(c.isupper() for c in letters) / len(letters) > 0.8 and len(t) < 120:
+            continue                                                 # ALL-CAPS label line ("8-CHANNEL AUDIO & CV ...")
         paras.append(t)
     text = ""
     for p in paras:
@@ -365,14 +368,23 @@ def spec_rows(body_html, limit=6):
     """Rows for the SPECIFICATIONS box, from the first bullet list in the description.
     'Voices: 6-voice analog' -> ('Voices', '6-voice analog'); a bullet without 'Label: value'
     shape becomes ('', bullet) and is rendered full-width."""
-    items = []
-    for lst in re.findall(r"<(?:ul|ol)[^>]*>(.*?)</(?:ul|ol)>", body_html or "", flags=re.S | re.I):
-        for li in re.findall(r"<li[^>]*>(.*?)</li>", lst, flags=re.S | re.I):
+    body = body_html or ""
+    heads = [(m.start(), html.unescape(TAG_RE.sub(" ", m.group(1))).strip())
+             for m in re.finditer(r"<h\d[^>]*>(.*?)</h\d>", body, flags=re.S | re.I)]
+    lists = []          # (heading just above the list, items)
+    for m in re.finditer(r"<(?:ul|ol)[^>]*>(.*?)</(?:ul|ol)>", body, flags=re.S | re.I):
+        head = next((h for pos, h in reversed(heads) if pos < m.start()), "")
+        items = []
+        for li in re.findall(r"<li[^>]*>(.*?)</li>", m.group(1), flags=re.S | re.I):
             t = html.unescape(re.sub(r"\s+", " ", TAG_RE.sub(" ", li))).strip(" .;•·-–")
             if 3 <= len(t) <= 160:
                 items.append(t)
         if items:
-            break
+            lists.append((head, items))
+    if not lists:
+        return []
+    # prefer a list under a "Specifications"-style heading, else the first list (usually Features)
+    _, items = next(((h, it) for h, it in lists if re.search(r"spec", h, re.I)), lists[0])
     rows = []
     for t in items[:limit]:
         m = re.match(r"^([^:–—]{2,28}?)\s*[:–—]\s+(.+)$", t)
