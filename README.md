@@ -45,15 +45,20 @@ out and the others stay tagged for the following runs (one per hour).
 
 Design: claude.ai/design "Product Launch Email" (Igor, 2026-09-08). Layout, top to bottom:
 coral gradient body (hosted PNG `assets/launch-coral.png`, generated with `make_gradient.py`),
-black header bar (MOOG AUDIO / PRODUCT LAUNCH), eyebrow "It's finally here", headline + sub-line
-on the gradient, then a **white sheet** holding everything with body text: main product image on a
-bordered card, **up to three gallery thumbnails** (row omitted when the product has a single image;
-1–3 tiles adapt in width), description, **SPECIFICATIONS** box, price + "Financing available at
-checkout · Free shipping" (free shipping only from 199$), SHOP NOW, a one-line note. Then the
-Boutique band and the standard white footer (blog, events, value props, payments, rewards, socials,
-legal). The sheet exists for dark mode: Gmail inverts it to dark-with-white-text as one coherent
-block, whereas text placed straight on the gradient image would flip to white on peach (the design
-file had the text on the gradient; changed 2026-09-08 at Igor's request to optimise for dark themes).
+black header bar (MOOG AUDIO / PRODUCT LAUNCH), eyebrow "It's finally here", headline + sub-line,
+main product image in a bordered frame, **up to three gallery thumbnails** (row omitted when the
+product has a single image; 1–3 tiles adapt in width), description, **SPECIFICATIONS** box, price +
+"Financing available at checkout · Free shipping" (free shipping only from 199$), SHOP NOW, a
+one-line note — all directly on the gradient, as in the design (a white content sheet was tried on
+2026-09-08 and rejected by Igor). Then the Boutique band and the standard white footer (blog,
+events, value props, payments, rewards, socials, legal).
+
+Dark-mode measures specific to this e-mail: image frames have no inner padding (nothing to invert
+around a photo), and `product_img()` flattens any product PNG that has a transparent background
+onto white and re-hosts it on Klaviyo (`POST /api/image-upload/`, needs KLAVIYO_API_KEY and
+outbound access to cdn.shopify.com), because an inverting client would otherwise paint the
+transparent area black. Known limit: clients that invert (Gmail, legacy Outlook) still turn the black
+text on the gradient white; accepted by Igor on 2026-09-09 in favour of keeping the gradient look.
 
 Where the content comes from — all from the Shopify product, nothing hand-written per e-mail:
 - headline / sub-line: `split_title()` — split on " - " if the title has one, else right after the

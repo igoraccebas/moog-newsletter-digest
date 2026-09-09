@@ -13,7 +13,7 @@ Usage:
   python3 digest.py modular --days 14  # wider window
   python3 digest.py guitar --dry-run   # don't touch state/
 """
-import argparse, datetime as dt, html, json, os, re, sys, urllib.error, urllib.request
+import argparse, datetime as dt, hashlib, html, json, os, re, struct, sys, urllib.error, urllib.request, zlib
 from pathlib import Path
 
 STORE = "https://moogaudio.com"
@@ -309,6 +309,132 @@ _META_CACHE = {}
 def img_url(src, **params):
     """Append Shopify CDN resize params (width, height, crop) to an image URL."""
     return src + ("&" if "?" in src else "?") + "&".join(f"{k}={v}" for k, v in params.items())
+
+
+def flatten_png(data):
+    """If `data` is a PNG with transparency, return an opaque PNG (RGB) composited onto white; else None.
+    Pure Python: 8-bit, non-interlaced, colour types RGBA (6), grey+alpha (4) and palette+tRNS (3)."""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    pos, idat, plte, trns, hdr = 8, [], None, None, None
+    while pos + 8 <= len(data):
+        n, = struct.unpack(">I", data[pos:pos + 4])
+        tag, body = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + n]
+        pos += 12 + n
+        if tag == b"IHDR":
+            hdr = struct.unpack(">IIBBBBB", body)
+        elif tag == b"IDAT":
+            idat.append(body)
+        elif tag == b"PLTE":
+            plte = body
+        elif tag == b"tRNS":
+            trns = body
+        elif tag == b"IEND":
+            break
+    if not hdr:
+        return None
+    w, h, depth, ctype, _, _, interlace = hdr
+    if depth != 8 or interlace or ctype not in (3, 4, 6) or (ctype == 3 and not trns):
+        return None                                   # no alpha channel (or unsupported): keep the original
+    ch = {3: 1, 4: 2, 6: 4}[ctype]
+    raw = zlib.decompress(b"".join(idat))
+    stride = w * ch
+    prev = bytearray(stride)
+    p = 0
+    rows = []
+    for _ in range(h):
+        f, line = raw[p], bytearray(raw[p + 1:p + 1 + stride])
+        p += 1 + stride
+        if f == 1:
+            for i in range(ch, stride):
+                line[i] = (line[i] + line[i - ch]) & 255
+        elif f == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 255
+        elif f == 3:
+            for i in range(stride):
+                line[i] = (line[i] + (((line[i - ch] if i >= ch else 0) + prev[i]) >> 1)) & 255
+        elif f == 4:
+            for i in range(stride):
+                a = line[i - ch] if i >= ch else 0
+                b = prev[i]
+                c = prev[i - ch] if i >= ch else 0
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append(line)
+        prev = line
+    if ctype == 3:                                    # palette + tRNS -> RGBA
+        alpha = trns + b"\xff" * 256
+        rows = [bytearray(b"".join(plte[3 * v:3 * v + 3] + bytes([alpha[v]]) for v in line)) for line in rows]
+        ch = 4
+    out_rows = []
+    has_alpha = False
+    for line in rows:
+        o = bytearray(w * 3)
+        for x in range(w):
+            if ch == 4:
+                r, g, b, a = line[4 * x:4 * x + 4]
+            else:
+                r = g = b = line[2 * x]
+                a = line[2 * x + 1]
+            if a != 255:
+                has_alpha = True
+                inv = 255 - a
+                r, g, b = (r * a + 255 * inv) // 255, (g * a + 255 * inv) // 255, (b * a + 255 * inv) // 255
+            o[3 * x], o[3 * x + 1], o[3 * x + 2] = r, g, b
+        out_rows.append(bytes(o))
+    if not has_alpha:
+        return None
+    body = b"".join(b"\x00" + r for r in out_rows)
+    def chunk(tag, payload):
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", zlib.crc32(tag + payload) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(body, 9)) + chunk(b"IEND", b""))
+
+
+def klaviyo_upload_image(png_bytes, name, api_key):
+    """POST /api/image-upload/ (multipart). Returns the hosted image URL."""
+    boundary = "----moog-digest-" + hashlib.sha1(png_bytes).hexdigest()[:16]
+    parts = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\n{name}\r\n"
+             f"--{boundary}\r\nContent-Disposition: form-data; name=\"hidden\"\r\n\r\nfalse\r\n"
+             f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}.png\"\r\n"
+             f"Content-Type: image/png\r\n\r\n").encode() + png_bytes + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(KLAVIYO_API + "image-upload", data=parts, method="POST", headers={
+        "Authorization": f"Klaviyo-API-Key {api_key}", "revision": KLAVIYO_REVISION, "accept": "application/json",
+        "content-type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.loads(r.read())["data"]["attributes"]["image_url"]
+
+
+_OPAQUE_CACHE = {}
+
+
+def product_img(src, **params):
+    """Shopify CDN URL with resize params. A PNG with a transparent background is downloaded, composited
+    onto white and re-hosted on Klaviyo (needs KLAVIYO_API_KEY), because mail clients that invert
+    colours in dark mode would otherwise show a dark box behind the product. Falls back to the plain
+    CDN URL whenever that is not possible."""
+    url = img_url(src, **params)
+    if not src.split("?")[0].lower().endswith(".png"):
+        return url
+    if url in _OPAQUE_CACHE:
+        return _OPAQUE_CACHE[url]
+    result, short = url, src.split("/")[-1].split("?")[0]
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=30) as r:
+            flat = flatten_png(r.read())
+        if flat:
+            key = os.environ.get("KLAVIYO_API_KEY")
+            if key:
+                result = klaviyo_upload_image(flat, "flat-" + hashlib.sha1(url.encode()).hexdigest()[:12], key)
+                print(f"  note: {short} had a transparent background; hosted a flattened copy on Klaviyo")
+            else:
+                print(f"  note: {short} has a transparent background (dark box in inverting clients); "
+                      f"set KLAVIYO_API_KEY to host a flattened copy")
+    except Exception as e:                            # network blocked, odd PNG, upload refused: keep the CDN URL
+        print(f"  note: could not flatten {short}: {e}")
+    _OPAQUE_CACHE[url] = result
+    return result
 
 
 def split_title(title, vendor="", product_type=""):
@@ -736,7 +862,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">
       <tr><td class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
       <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:18px 0">
-        <a href="{url}" style="display:block"><img src="{hero['image']}&width=800" width="400" alt="{esc(hero['title'])}" style="display:block;width:100%;max-width:400px;height:auto;border:0;margin:0 auto"></a>
+        <a href="{url}" style="display:block"><img src="{product_img(hero['image'], width=800)}" width="400" alt="{esc(hero['title'])}" style="display:block;width:100%;max-width:400px;height:auto;border:0;margin:0 auto"></a>
       </td></tr>
       <tr><td class="m-label txt-hero" style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
       <tr><td class="m-hero-title txt-hero" style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(hero['title'])}</a></td></tr>
@@ -762,7 +888,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
           <td class="stack stack-img" width="200" valign="top" style="width:200px;padding-right:20px">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
               <td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {HAIRLINE};padding:8px">
-                <a href="{url}" style="display:block"><img src="{c['image']}&width=400" width="182" alt="{esc(c['title'])}" style="display:block;width:100%;max-width:182px;height:auto;border:0;margin:0 auto"></a>
+                <a href="{url}" style="display:block"><img src="{product_img(c['image'], width=400)}" width="182" alt="{esc(c['title'])}" style="display:block;width:100%;max-width:182px;height:auto;border:0;margin:0 auto"></a>
               </td>
             </tr></table>
           </td>
@@ -982,12 +1108,12 @@ def render_launch(card, product, extras):
                 cells.append('<td width="11" style="width:11px;font-size:1px;line-height:1px">&nbsp;</td>')
             # no inner padding: if a client inverts the tile background, there is no white ring to turn dark
             cells.append(f'<td class="thumb bg-tile" bgcolor="{WHITE}" align="center" valign="middle" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:0;line-height:0;font-size:0">'
-                         f'<a href="{url}" style="display:block;line-height:0"><img src="{img_url(t, width=tw * 2, height=th * 2, crop="center")}" width="{tw}" alt="{esc(card["title"])} — view {i + 2}" '
+                         f'<a href="{url}" style="display:block;line-height:0"><img src="{product_img(t, width=tw * 2, height=th * 2, crop="center")}" width="{tw}" alt="{esc(card["title"])} — view {i + 2}" '
                          f'style="display:block;width:100%;height:auto;border:0"></a></td>')
         thumbs_html = f"""
-      <tr><td align="center" class="m-pad2" style="padding:12px 20px 0 20px">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{"".join(cells)}</tr></table>
-      </td></tr>"""
+  <tr><td align="center" class="m-pad" style="padding:12px 32px 0 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{"".join(cells)}</tr></table>
+  </td></tr>"""
 
     spec_html = ""
     if rows:
@@ -1000,7 +1126,7 @@ def render_launch(card, product, extras):
             else:
                 trs.append(f'<tr><td colspan="2" valign="top" class="m-small txt-black hl" style="padding:12px 20px;font-size:12px;line-height:18px;color:{BLACK};{border}">{esc(value)}</td></tr>')
         spec_html = f"""
-      <tr><td class="m-pad2" style="padding:24px 20px 0 20px">
+  <tr><td class="m-pad" style="padding:28px 32px 0 32px">
     <table role="presentation" class="bg-body" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="{WHITE}" style="width:100%;background-color:{WHITE};border:1px solid {BLACK}">
       <tr><td colspan="2" bgcolor="{BLACK}" class="bg-nav txt-white" style="background:{BLACK};padding:12px 20px;font-size:11px;font-weight:bold;letter-spacing:2px;color:{WHITE}">{spec_title}</td></tr>
       {"".join(trs)}
@@ -1008,9 +1134,9 @@ def render_launch(card, product, extras):
   </td></tr>"""
 
     blurb_html = (f"""
-      <tr><td class="m-pad2" style="padding:24px 20px 0 20px">
-        <div class="m-body txt-black" style="font-size:15px;line-height:23px;color:{BLACK}">{esc(blurb)}</div>
-      </td></tr>""" if blurb else "")
+  <tr><td class="m-pad" style="padding:30px 32px 0 32px">
+    <div class="m-body txt-hero" style="font-size:15px;line-height:23px;color:{BLACK}">{esc(blurb)}</div>
+  </td></tr>""" if blurb else "")
 
     def section_head(title, link_text, href, pad_top=32):
         return f"""
@@ -1101,34 +1227,28 @@ def render_launch(card, product, extras):
       <td align="right" class="m-label txt-sand" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{SAND}">PRODUCT LAUNCH</td>
     </tr></table>
   </td></tr>
-  <tr><td height="30" style="height:30px;line-height:30px;font-size:1px">&nbsp;</td></tr>
-  <tr><td class="m-pad" style="padding:0 32px">
-    <table role="presentation" class="bg-body" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="{WHITE}" style="width:100%;background-color:{WHITE}">
-      <tr><td align="center" class="m-pad2" style="padding:30px 20px 6px 20px">
-        <div class="m-label txt-black" style="font-size:11px;font-weight:bold;letter-spacing:3px;text-transform:uppercase;color:{BLACK}">{esc(DEPARTMENTS['hot']['eyebrow'])}</div>
-        <h1 class="m-launch-h1 txt-black" style="margin:12px 0 0 0;font-size:{h1_size}px;line-height:{h1_size + 4}px;font-weight:bold;letter-spacing:-0.5px;color:{BLACK}">{esc(h1)}</h1>
-        {f'<div class="m-intro txt-black" style="margin-top:10px;font-size:15px;line-height:22px;color:{BLACK}">{esc(sub)}</div>' if sub else ''}
-      </td></tr>
-      <tr><td align="center" class="m-pad2" style="padding:20px 20px 0 20px">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
-          <td bgcolor="{WHITE}" class="bg-tile" align="center" valign="middle" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:0;line-height:0;font-size:0">
-            <a href="{url}" style="display:block;line-height:0"><img src="{img_url(main_img, width=1000)}" width="494" alt="{esc(card['title'])}" style="display:block;width:100%;height:auto;border:0"></a>
-          </td>
-        </tr></table>
-      </td></tr>{thumbs_html}{blurb_html}{spec_html}
-      <tr><td align="center" class="m-pad2" style="padding:26px 20px 8px 20px">
-        <div class="m-hero-title txt-black" style="font-size:22px;font-weight:bold;color:{BLACK}">{price_line}</div>
-        <div class="m-small txt-black" style="margin-top:4px;font-size:12px;color:{BLACK}">{perks}</div>
-      </td></tr>
-      <tr><td align="center" style="padding:12px 20px 8px 20px">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-          <td bgcolor="{BLACK}" class="btn" style="background:{BLACK};border:1px solid {WHITE}"><a href="{url}" class="m-btn" style="{btn}padding:16px 40px;">Shop Now</a></td>
-        </tr></table>
-      </td></tr>
-      <tr><td align="center" class="m-small txt-black m-pad2" style="padding:4px 20px 26px 20px;font-size:12px;color:{BLACK}">{esc(LAUNCH_NOTE)}</td></tr>
-    </table>
+  <tr><td align="center" class="m-pad" style="padding:44px 32px 10px 32px">
+    <div class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:3px;text-transform:uppercase;color:{BLACK}">{esc(DEPARTMENTS['hot']['eyebrow'])}</div>
+    <h1 class="m-launch-h1 txt-hero" style="margin:12px 0 0 0;font-size:{h1_size}px;line-height:{h1_size + 4}px;font-weight:bold;letter-spacing:-0.5px;color:{BLACK}">{esc(h1)}</h1>
+    {f'<div class="m-intro txt-hero" style="margin-top:10px;font-size:15px;line-height:22px;color:{BLACK}">{esc(sub)}</div>' if sub else ''}
   </td></tr>
-  <tr><td height="32" style="height:32px;line-height:32px;font-size:1px">&nbsp;</td></tr>
+  <tr><td align="center" class="m-pad" style="padding:26px 32px 0 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
+      <td bgcolor="{WHITE}" class="bg-tile" align="center" valign="middle" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:0;line-height:0;font-size:0">
+        <a href="{url}" style="display:block;line-height:0"><img src="{product_img(main_img, width=1000)}" width="534" alt="{esc(card['title'])}" style="display:block;width:100%;height:auto;border:0"></a>
+      </td>
+    </tr></table>
+  </td></tr>{thumbs_html}{blurb_html}{spec_html}
+  <tr><td align="center" class="m-pad" style="padding:30px 32px 8px 32px">
+    <div class="m-hero-title txt-hero" style="font-size:22px;font-weight:bold;color:{BLACK}">{price_line}</div>
+    <div class="m-small txt-hero" style="margin-top:4px;font-size:12px;color:{BLACK}">{perks}</div>
+  </td></tr>
+  <tr><td align="center" style="padding:12px 32px 8px 32px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
+      <td bgcolor="{BLACK}" class="btn-hero" style="background:{BLACK}"><a href="{url}" class="m-btn txt-white" style="{btn}padding:16px 40px;">Shop Now</a></td>
+    </tr></table>
+  </td></tr>
+  <tr><td align="center" class="m-small txt-hero m-pad" style="padding:4px 32px 40px 32px;font-size:12px;color:{BLACK}">{esc(LAUNCH_NOTE)}</td></tr>
   <tr><td bgcolor="{BLACK}" class="bg-band m-pad" style="background:{BLACK};padding:26px 32px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td class="stack stack-img m-body txt-white" style="font-size:13px;line-height:19px;color:{WHITE};padding-right:16px">{esc(LAUNCH_BAND)}</td>
