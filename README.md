@@ -45,12 +45,15 @@ out and the others stay tagged for the following runs (one per hour).
 
 Design: claude.ai/design "Product Launch Email" (Igor, 2026-09-08). Layout, top to bottom:
 coral gradient body (hosted PNG `assets/launch-coral.png`, generated with `make_gradient.py`),
-black header bar (MOOG AUDIO / PRODUCT LAUNCH), eyebrow "It's finally here", headline + sub-line,
-main product image on a white card, **up to three gallery thumbnails** (row omitted when the
-product has a single image; 1–3 tiles adapt in width), description, **SPECIFICATIONS** box,
-price + "Financing available at checkout · Free shipping" (free shipping only from 199$),
-SHOP NOW, a one-line note, the Boutique band, then the standard white footer (blog, events,
-value props, payments, rewards, socials, legal).
+black header bar (MOOG AUDIO / PRODUCT LAUNCH), eyebrow "It's finally here", headline + sub-line
+on the gradient, then a **white sheet** holding everything with body text: main product image on a
+bordered card, **up to three gallery thumbnails** (row omitted when the product has a single image;
+1–3 tiles adapt in width), description, **SPECIFICATIONS** box, price + "Financing available at
+checkout · Free shipping" (free shipping only from 199$), SHOP NOW, a one-line note. Then the
+Boutique band and the standard white footer (blog, events, value props, payments, rewards, socials,
+legal). The sheet exists for dark mode: Gmail inverts it to dark-with-white-text as one coherent
+block, whereas text placed straight on the gradient image would flip to white on peach (the design
+file had the text on the gradient; changed 2026-09-08 at Igor's request to optimise for dark themes).
 
 Where the content comes from — all from the Shopify product, nothing hand-written per e-mail:
 - headline / sub-line: `split_title()` — split on " - " if the title has one, else right after the
