@@ -82,8 +82,8 @@ TAG_HOT = "newsletter-hot"    # queues ONE product for the Product Launch e-mail
 LAUNCH_STYLES = {
     "coral":    {"solid": "#f86726", "accent": "#eabf7c", "image": KL_IMG + "1810eefe-5c37-410a-a2fa-aa3d16ea803d.png",
                  "stops": "#fdbb8f 0%,#f86726 30%,#eabf7c 58%,#ffe2d8 82%,#d5ddda 100%"},
-    "graphite": {"solid": "#a9afba", "accent": "#d3d7dd", "image": KL_IMG + "d56841e5-0f02-4480-ac40-899b9a3b6744.png",
-                 "stops": "#f1f2f4 0%,#b9bec7 30%,#8f96a3 58%,#d3d7dd 82%,#eef0f3 100%"},
+    "graphite": {"solid": "#737b88", "accent": "#c9ced6", "image": "",
+                 "stops": "#9aa1ad 0%,#737b88 30%,#626a77 58%,#8b929e 82%,#a4abb6 100%"},
     "slate":    {"solid": "#8aa4c8", "accent": "#b8c9df", "image": KL_IMG + "f601dc03-cb3f-4574-a063-0f7a6f16f4bb.png",
                  "stops": "#dbe4f0 0%,#8aa4c8 30%,#b8c9df 58%,#e6edf6 82%,#d5ddda 100%"},
     "sage":     {"solid": "#7fb59a", "accent": "#b7d6c6", "image": KL_IMG + "6e4223da-ad62-4408-b4cf-f0d7b3ebb0eb.png",
