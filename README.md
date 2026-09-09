@@ -72,6 +72,10 @@ Where the content comes from — all from the Shopify product, nothing hand-writ
   "Label: value" bullets render as two columns and the box is titled SPECIFICATIONS; plain bullets
   render full-width under KEY FEATURES; no list at all → no box.
 - static copy lines live in `LAUNCH_NOTE` and `LAUNCH_BAND` in digest.py.
+- backdrop colour: `LAUNCH_STYLES` — coral (design default), graphite, slate, sage, gold, blush;
+  each a hosted 600x1600 PNG from `assets/launch-<name>.png` (make_gradient.py, 160deg). Choose per
+  product by adding the Shopify tag `launch:<name>` next to `newsletter-hot` (the tag is removed
+  with it), or by hand with `--launch-style <name>`. The manifest records `launch_style`.
 
 Run by hand: `python3 digest.py hot --from-json out/hot.json --extras out/extras.json [--publish] [--dry-run]`
 (a sample Admin response is kept locally in out/hot-test.json, not in the repo). Output:

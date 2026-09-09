@@ -75,12 +75,42 @@ TAG_HOT = "newsletter-hot"    # queues ONE product for the Product Launch e-mail
 # Product Launch e-mail (design: claude.ai/design "Product Launch Email"). Whole body sits on a coral
 # gradient; hosted PNG because CSS gradients do not render in Outlook / Gmail Android. Copy lines
 # below are static marketing copy from the design — edit freely.
-LAUNCH_BG = {"solid": "#f86726",
-             "image": KL_IMG + "1810eefe-5c37-410a-a2fa-aa3d16ea803d.png",   # assets/launch-coral.png, 600x1600, hosted on Klaviyo
-             "gradient": "linear-gradient(160deg,#fdbb8f 0%,#f86726 30%,#eabf7c 58%,#ffe2d8 82%,#d5ddda 100%)"}
+# Backdrops for the launch e-mail. Each is a 600x1600 PNG (assets/launch-<name>.png, made with
+# make_gradient.py from `stops`, angle 160deg) hosted on Klaviyo; `solid` is the Outlook fallback,
+# `accent` colours the small PRODUCT LAUNCH label. Pick one per product with the Shopify tag
+# "launch:<name>" (e.g. launch:graphite) or --launch-style; default is the design's coral.
+LAUNCH_STYLES = {
+    "coral":    {"solid": "#f86726", "accent": "#eabf7c", "image": KL_IMG + "1810eefe-5c37-410a-a2fa-aa3d16ea803d.png",
+                 "stops": "#fdbb8f 0%,#f86726 30%,#eabf7c 58%,#ffe2d8 82%,#d5ddda 100%"},
+    "graphite": {"solid": "#a9afba", "accent": "#d3d7dd", "image": KL_IMG + "d56841e5-0f02-4480-ac40-899b9a3b6744.png",
+                 "stops": "#f1f2f4 0%,#b9bec7 30%,#8f96a3 58%,#d3d7dd 82%,#eef0f3 100%"},
+    "slate":    {"solid": "#8aa4c8", "accent": "#b8c9df", "image": KL_IMG + "f601dc03-cb3f-4574-a063-0f7a6f16f4bb.png",
+                 "stops": "#dbe4f0 0%,#8aa4c8 30%,#b8c9df 58%,#e6edf6 82%,#d5ddda 100%"},
+    "sage":     {"solid": "#7fb59a", "accent": "#b7d6c6", "image": KL_IMG + "6e4223da-ad62-4408-b4cf-f0d7b3ebb0eb.png",
+                 "stops": "#e3efe8 0%,#7fb59a 30%,#b7d6c6 58%,#eaf3ee 82%,#d5ddda 100%"},
+    "gold":     {"solid": "#e0a526", "accent": "#f0d18a", "image": KL_IMG + "3128b897-5b35-4be9-b80c-73a2aef2e621.png",
+                 "stops": "#fbe7b5 0%,#e0a526 30%,#f0d18a 58%,#fff3d6 82%,#e6e0cf 100%"},
+    "blush":    {"solid": "#e8687a", "accent": "#f3b6bf", "image": KL_IMG + "bccb80bb-6eb1-4f50-b884-048d08c59c4e.png",
+                 "stops": "#fbd7dd 0%,#e8687a 30%,#f3b6bf 58%,#fde9ec 82%,#e4d9dc 100%"},
+}
+LAUNCH_TAG_PREFIX = "launch:"
+
+
+def launch_style(name=None, tags=()):
+    """Resolve the launch backdrop: explicit name > 'launch:<name>' product tag > coral."""
+    if not name:
+        for t in tags or ():
+            if t.lower().startswith(LAUNCH_TAG_PREFIX) and t.split(":", 1)[1].strip().lower() in LAUNCH_STYLES:
+                name = t.split(":", 1)[1].strip().lower()
+                break
+    name = (name or "coral").lower()
+    if name not in LAUNCH_STYLES:
+        raise SystemExit(f"unknown launch style '{name}'; choose from {', '.join(LAUNCH_STYLES)}")
+    s = dict(LAUNCH_STYLES[name])
+    s["name"], s["gradient"] = name, f"linear-gradient(160deg,{s['stops']})"
+    return s
 LAUNCH_NOTE = "Limited first allocation — orders are filled in sequence."
 LAUNCH_BAND = "Want to try it first? Come see it at the Boutique — 3828 St Laurent Blvd, Montreal."
-SAND = "#eabf7c"
 BLOG_URL, EVENTS_URL = "/blogs/news", "/blogs/events"
 # Every product that goes into the email is also added to this manual collection (Admin collectionAddProducts)
 NEW_RELEASES_COLLECTION = {"handle": "newreleases", "id": "gid://shopify/Collection/306490671293"}
@@ -1064,7 +1094,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
 </html>"""
 
 
-def render_launch(card, product, extras):
+def render_launch(card, product, extras, style=None):
     """Single-product 'Product Launch' e-mail (claude.ai/design 'Product Launch Email').
     Coral gradient backdrop; black header bar; eyebrow/headline/sub-line on the gradient; then a WHITE
     SHEET holding everything with body text — main image card, up to three gallery thumbnails (row
@@ -1091,7 +1121,7 @@ def render_launch(card, product, extras):
                                        if card.get("compare") else "")
     first_sentence = re.split(r"(?<=[.!?])\s", blurb, maxsplit=1)[0] if blurb else ""
     preheader = f"It's here: the {h1}. {first_sentence}".strip()
-    bg = LAUNCH_BG
+    bg = style or launch_style()
     bg_attr = f' background="{bg["image"]}"' if bg["image"] else ""
     bg_css = (f"background-image:url({bg['image']});background-size:cover;background-position:center top;background-repeat:no-repeat;"
               if bg["image"] else f"background-image:{bg['gradient']};")
@@ -1224,7 +1254,7 @@ def render_launch(card, product, extras):
   <tr><td bgcolor="{BLACK}" class="bg-nav m-pad" style="background:{BLACK};padding:16px 32px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td class="txt-white" style="font-size:18px;font-weight:bold;color:{WHITE};letter-spacing:2px"><a href="{link('/')}" style="color:{WHITE};text-decoration:none">MOOG&nbsp;AUDIO</a></td>
-      <td align="right" class="m-label txt-sand" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{SAND}">PRODUCT LAUNCH</td>
+      <td align="right" class="m-label txt-sand" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{bg['accent']}">PRODUCT LAUNCH</td>
     </tr></table>
   </td></tr>
   <tr><td align="center" class="m-pad" style="padding:44px 32px 10px 32px">
@@ -1433,6 +1463,8 @@ def run_hot(a, d, keep, sold_out, noise, now):
         product["published_at"] = now.isoformat()            # group() sorts on it; None would crash
     card = group([product])[0]
     extras = load_extras(a.extras)
+    style = launch_style(a.launch_style, product.get("tags", []))
+    style_tags = [t for t in product.get("tags", []) if t.lower().startswith(LAUNCH_TAG_PREFIX)]
     h1, sub = split_title(card["title"], card["vendor"], card.get("type") or "")
     blurb = long_blurb(product.get("body_html", ""), card["title"])
     first_sentence = re.split(r"(?<=[.!?])\s", blurb, maxsplit=1)[0] if blurb else ""
@@ -1443,14 +1475,14 @@ def run_hot(a, d, keep, sold_out, noise, now):
     stamp = now.strftime("%Y-%m-%d")
     slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
     html_path, json_path = OUT / f"hot-{stamp}-{slug}.html", OUT / f"hot-{stamp}-{slug}.json"
-    html_path.write_text(render_launch(card, product, extras))
+    html_path.write_text(render_launch(card, product, extras, style))
     day_label = now.astimezone(dt.timezone(dt.timedelta(hours=-4))).strftime("%b %-d")
     images = [i["src"] for i in product.get("images", []) if i.get("src")]
     json_path.write_text(json.dumps({
         "dept": "hot", "label": d["label"], "generated_at": now.isoformat(),
         "subject": subject, "preview_text": preview, "campaign_name": f"Product Launch · {h1} · {day_label}",
-        "tags": [TAG_HOT],
-        "untag": [{"id": i, "tags": [TAG_HOT]} for i in card.get("admin_ids", [])],
+        "tags": [TAG_HOT], "launch_style": style["name"],
+        "untag": [{"id": i, "tags": [TAG_HOT] + style_tags} for i in card.get("admin_ids", [])],
         "add_to_collection": {**NEW_RELEASES_COLLECTION, "product_ids": list(card.get("admin_ids", []))},
         "product": {"headline": h1, "subline": sub, "vendor": card["vendor"], "title": card["title"],
                     "live": live, "status": product.get("status"),
@@ -1469,7 +1501,7 @@ def run_hot(a, d, keep, sold_out, noise, now):
         print(f"WARNING: product is NOT LIVE yet (status {product.get('status')}, not published to the Online Store). "
               f"The draft links to {card['url']} — publish the product before the campaign's send time.")
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
-    print(f"  PRODUCT {card['vendor']} | {h1} | {sub} | {card['price']} | {len(images)} image(s) | {len(spec_rows(product.get('body_html', '')))} spec rows")
+    print(f"  PRODUCT {card['vendor']} | {h1} | {sub} | {card['price']} | {len(images)} image(s) | {len(spec_rows(product.get('body_html', '')))} spec rows  [backdrop: {style['name']}]")
     for p in queued:
         print(f"  queued: {p['title']}")
     if extras["blog"]:
@@ -1487,6 +1519,8 @@ def main():
     ap.add_argument("--from-json", metavar="FILE", help="render from a saved Shopify Admin GraphQL response (tag mode)")
     ap.add_argument("--extras", metavar="FILE", help='store mode: {"blog": [...articles], "events": [...articles]}')
     ap.add_argument("--publish", action="store_true", help="create the Klaviyo DRAFT campaign (needs KLAVIYO_API_KEY env var)")
+    ap.add_argument("--launch-style", metavar="NAME", choices=sorted(LAUNCH_STYLES),
+                    help="hot mode: backdrop colour (default: the product's 'launch:<name>' tag, else coral)")
     ap.add_argument("--update-campaign", metavar="CAMPAIGN_ID",
                     help="instead of a new campaign, put the freshly rendered HTML on this existing DRAFT campaign (needs KLAVIYO_API_KEY)")
     ap.add_argument("--hero-style", metavar="NAME", help="force a hero background (default: rotate by date): "
