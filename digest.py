@@ -83,7 +83,7 @@ LAUNCH_STYLES = {
     "coral":    {"solid": "#f86726", "accent": "#eabf7c", "image": KL_IMG + "1810eefe-5c37-410a-a2fa-aa3d16ea803d.png",
                  "stops": "#fdbb8f 0%,#f86726 30%,#eabf7c 58%,#ffe2d8 82%,#d5ddda 100%"},
     "graphite": {"solid": "#6f7784", "accent": "#c9ced6", "image": KL_IMG + "baf4aebb-f15a-495b-9a53-8b36c529d9f7.png",
-                 "stops": "#8f96a2 0%,#6f7784 32%,#5f6774 58%,#7a828d 82%,#9aa1ab 100%"}   # mesh PNG, see make_gradient.py mesh,
+                 "stops": "#8f96a2 0%,#6f7784 32%,#5f6774 58%,#7a828d 82%,#9aa1ab 100%"},
     "slate":    {"solid": "#8aa4c8", "accent": "#b8c9df", "image": KL_IMG + "f601dc03-cb3f-4574-a063-0f7a6f16f4bb.png",
                  "stops": "#dbe4f0 0%,#8aa4c8 30%,#b8c9df 58%,#e6edf6 82%,#d5ddda 100%"},
     "sage":     {"solid": "#7fb59a", "accent": "#b7d6c6", "image": KL_IMG + "6e4223da-ad62-4408-b4cf-f0d7b3ebb0eb.png",
