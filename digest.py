@@ -212,6 +212,7 @@ MOBILE_CSS = (
     " .stack{display:block!important;width:100%!important;padding-right:0!important;}"
     " .stack-img{padding-bottom:14px!important;}"
     " .stack-img img{width:100%!important;max-width:320px!important;margin:0 auto;}"
+    " .bg-tile img{max-width:100%!important;}"   # product frames: image fills the tile on phones too (no ring to invert)
     " .m-h1{font-size:30px!important;line-height:36px!important;}"
     " .m-intro{font-size:17px!important;line-height:25px!important;}"
     " .m-label{font-size:13px!important;line-height:18px!important;}"
@@ -891,8 +892,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
   <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:28px 24px 32px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">
       <tr><td class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
-      <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:18px 0">
-        <a href="{url}" style="display:block"><img src="{product_img(hero['image'], width=800)}" width="400" alt="{esc(hero['title'])}" style="display:block;width:100%;max-width:400px;height:auto;border:0;margin:0 auto"></a>
+      <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:0;line-height:0;font-size:0">
+        <a href="{url}" style="display:block;line-height:0"><img src="{product_img(hero['image'], width=1100)}" width="550" alt="{esc(hero['title'])}" style="display:block;width:100%;height:auto;border:0"></a>
       </td></tr>
       <tr><td class="m-label txt-hero" style="padding-top:18px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{BLACK}">{esc(hero['vendor'])}</td></tr>
       <tr><td class="m-hero-title txt-hero" style="padding-top:4px;font-size:22px;line-height:27px;font-weight:bold;color:{BLACK}"><a href="{url}" style="color:{BLACK};text-decoration:none">{esc(hero['title'])}</a></td></tr>
@@ -917,8 +918,8 @@ def render_picks(cards, hero, extras, week_label, style=None):
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
           <td class="stack stack-img" width="200" valign="top" style="width:200px;padding-right:20px">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
-              <td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {HAIRLINE};padding:8px">
-                <a href="{url}" style="display:block"><img src="{product_img(c['image'], width=400)}" width="182" alt="{esc(c['title'])}" style="display:block;width:100%;max-width:182px;height:auto;border:0;margin:0 auto"></a>
+              <td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {HAIRLINE};padding:0;line-height:0;font-size:0">
+                <a href="{url}" style="display:block;line-height:0"><img src="{product_img(c['image'], width=400)}" width="198" alt="{esc(c['title'])}" style="display:block;width:100%;height:auto;border:0"></a>
               </td>
             </tr></table>
           </td>
