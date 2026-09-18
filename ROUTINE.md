@@ -50,3 +50,29 @@ Toronto in summer. Cost note: each run is a short cloud session even when nothin
 - Cloud routines cannot run more often than hourly, so the delay between tagging and the
   draft is 0–60 minutes (Igor accepted this on 2026-09-08 over a 10–30 min GitHub Actions /
   Make.com alternative that would have needed a Shopify Admin API token).
+
+---
+
+# Cloud routine — "Deals" (weekly, Wednesday 10am Toronto, tag `newsletter-sale`)
+
+Third routine, same environment and Klaviyo secret as the other two, Shopify connector only. Prompt:
+ROUTINE_SALE_PROMPT.md. Schedule: `0 14 * * 3` (UTC) = Wednesday 10am Toronto (9am after the November
+clock change, like the picks routine). Igor chose weekly over hourly on 2026-09-18. Routine id: see the
+line added when it was created (below). The cron is UTC and saving from the web form can rewrite it —
+re-check after any UI edit.
+
+- Everything tagged `newsletter-sale` by Wednesday morning goes out together in ONE draft; the tags are
+  removed afterwards (`digest.py sale`, added 2026-09-16). Nothing tagged → one "nothing tagged" report.
+- A tagged product without a compare-at price is not a deal: it is left out, listed under `no_discount`
+  in the manifest and untagged too; the run reports it ("Deals: N tagged without a discount - <date>").
+  Sold-out tagged products keep their tag and go out once purchasable again.
+- No New Releases step: `add_to_collection` is null in the manifest and the prompt never runs
+  collectionAddProducts. The only Shopify write is tagsRemove.
+- Banners (since 2026-09-17): the run renders one 900×675 PNG per deal with `banner.py` (stdlib only,
+  ~1.5–3 s each plus ~4 s once for the backdrop) and uploads each to Klaviyo's image library before the
+  campaign is created. Needs `assets/fonts/Helvetica.ttf` in the repo (hard error otherwise — the run
+  reports `ERROR: Deals banners need a font…`), and egress to `moogaudio.com` (brand-collection logos via
+  `/collections/<handle>.json`) and `cdn.shopify.com` (`format=png` conversions) — both already allowed.
+  The manifest lists the hosted URLs under `banners[]`; step 4 of the prompt checks they are https.
+- Report: ONE PushNotification every run — "Deals draft ready - <date>", "Deals: nothing tagged - <date>",
+  "Deals: N tagged without a discount - <date>" or "Deals run FAILED - <date>".

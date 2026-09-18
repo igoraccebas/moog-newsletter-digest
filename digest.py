@@ -12,9 +12,13 @@ Usage:
   python3 digest.py dj                 # last 7 days, updates state
   python3 digest.py modular --days 14  # wider window
   python3 digest.py guitar --dry-run   # don't touch state/
+  python3 digest.py store --from-json out/tagged.json --extras out/extras.json --publish   # weekly picks (routine)
+  python3 digest.py hot   --from-json out/hot.json    --extras out/extras.json --publish   # product launch (hourly)
+  python3 digest.py sale  --from-json out/sale.json   --extras out/extras.json --publish   # deals (hourly)
 """
 import argparse, datetime as dt, hashlib, html, json, os, re, struct, sys, urllib.error, urllib.request, zlib
 from pathlib import Path
+import banner            # Deals banner renderer (design 4B): stdlib PNG/text toolkit in a sibling file, cloned with the repo
 
 STORE = "https://moogaudio.com"
 KL_IMG = "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/"
@@ -64,6 +68,11 @@ DEPARTMENTS = {
     "hot":     {"handle": "newreleases", "label": "Product Launch", "short": "launch",
                 "eyebrow": "It's finally here", "tag": "newsletter-hot", "weekday": "hourly",
                 "title": "Product Launch", "subject_lead": "It's here"},
+    # deals e-mail, weekly (Wednesday), tag-driven (newsletter-sale). Every tagged product with a compare-at
+    # price goes out together in ONE e-mail as design-4B banners (banner.py). Never added to New Releases.
+    "sale":    {"handle": "sales", "label": "Deals", "short": "deals",
+                "eyebrow": "Deals at Moog Audio", "tag": "newsletter-sale", "weekday": "Wednesday",
+                "title": "Deals", "subject_lead": "Deals at Moog Audio"},
     # department collections (kept for reference / fallback)
     "dj":      {"handle": "dj-equipment-new",        "label": "DJ Equipment", "short": "DJ gear",     "weekday": "Monday"},
     "modular": {"handle": "new-modular-synthesizers", "label": "Modular",      "short": "modular gear","weekday": "Wednesday"},
@@ -72,6 +81,7 @@ DEPARTMENTS = {
 TAG = "newsletter"        # queues a product for the "Also New This Week" list
 TAG_HERO = "newsletter-hero"  # marks the single "Pick of the Week" hero
 TAG_HOT = "newsletter-hot"    # queues ONE product for the Product Launch e-mail (hourly routine)
+TAG_SALE = "newsletter-sale"  # queues products for the Deals e-mail (hourly routine); all tagged go out together
 # Product Launch e-mail (design: claude.ai/design "Product Launch Email"). Whole body sits on a coral
 # gradient; hosted PNG because CSS gradients do not render in Outlook / Gmail Android. Copy lines
 # below are static marketing copy from the design — edit freely.
@@ -521,7 +531,7 @@ def long_blurb(body_html, title, limit=480, min_len=120):
     return text
 
 
-def spec_rows(body_html, limit=6):
+def spec_rows(body_html, limit=6, spec_limit=10):
     """Rows for the SPECIFICATIONS box, from the first bullet list in the description.
     'Voices: 6-voice analog' -> ('Voices', '6-voice analog'); a bullet without 'Label: value'
     shape becomes ('', bullet) and is rendered full-width."""
@@ -541,12 +551,16 @@ def spec_rows(body_html, limit=6):
     if not lists:
         return []
     # prefer a list under a "Specifications"-style heading, else the first list (usually Features)
-    _, items = next(((h, it) for h, it in lists if re.search(r"spec", h, re.I)), lists[0])
+    head, items = next(((h, it) for h, it in lists if re.search(r"spec", h, re.I)), lists[0])
     rows = []
-    for t in items[:limit]:
+    for t in items:
         m = re.match(r"^([^:–—]{2,28}?)\s*[:–—]\s+(.+)$", t)
         rows.append((m.group(1).strip(), m.group(2).strip()) if m else ("", t))
-    return rows
+    labeled = sum(1 for lbl, _ in rows if lbl)
+    # a real spec sheet (mostly "Label: value") is shown in full, up to spec_limit rows;
+    # a plain feature list is trimmed to `limit`
+    cap = spec_limit if rows and labeled * 2 >= len(rows) else limit
+    return rows[:cap]
 
 
 def fetch_meta_description(url):
@@ -665,6 +679,17 @@ def is_noise(p):
     return p.get("product_type") in EXCLUDE_TYPES or bool(EXCLUDE_TITLE_RE.search(p["title"])) or not p.get("images")
 
 
+def has_discount(p):
+    """True when the variant a card would show (the first purchasable one, else the first) has a
+    compare-at price above its price, i.e. the storefront shows a strike-through. Deals mode only."""
+    vs = p.get("variants", [])
+    if not vs:
+        return False
+    v = next((v for v in vs if v.get("available")), vs[0])
+    c = v.get("compare_at_price")
+    return bool(c) and float(c) > float(v["price"])
+
+
 MODEL_TOKEN = re.compile(r"^[A-Z0-9][A-Z0-9/-]{3,}$")  # e.g. SL-1200M7GL, AT-VM95EBK
 
 
@@ -710,6 +735,7 @@ def group(products):
             "price": (("From " if len(prices) > 1 else "") + money(prices[0])),
             "compare": money(compare) if compare else None,
             "save": money(compare - prices[0]) if compare else None,
+            "discount_pct": round((compare - prices[0]) / compare * 100) if compare else None,
             "status": next((s for s in STATUS_ORDER if s in statuses), None),
             "variants": variants,
             "published_at": lead["published_at"], "ids": [p["id"] for p in ps],
@@ -862,26 +888,49 @@ def render(dept, cards, week_label):
 </body></html>"""
 
 
-def render_picks(cards, hero, extras, week_label, style=None):
+# The picks layout serves two e-mails. Each variant only swaps the words, links and the % OFF badge;
+# the tables, classes and dark-mode hooks are shared so both stay in step.
+PICKS_VARIANT = {
+    "dept": "store", "utm": "utm_source=klaviyo&utm_medium=email&utm_campaign=new-store-digest",
+    "preheader": "This week's picks: ", "hero_label": "PICK OF THE WEEK",
+    "list_title": "New This Week", "list_title_with_hero": "Also New This Week",
+    "collection": "/collections/newreleases", "cta": "Shop All New Releases", "pct_badge": False,
+    "intro": lambda n: f"{n} new {'pick' if n == 1 else 'picks'} from across the store, chosen by the team. Here's what's worth a look this week.",
+}
+SALE_VARIANT = {
+    "dept": "sale", "utm": "utm_source=klaviyo&utm_medium=email&utm_campaign=deals-digest",
+    "preheader": "Deals: ", "hero_label": "TOP DEAL",
+    "list_title": "Deals", "list_title_with_hero": "More Deals",
+    "collection": "/collections/sales", "cta": "Shop All Deals", "pct_badge": True,
+    "intro": lambda n: f"{n} {'deal' if n == 1 else 'deals'} hand-picked by the team. Sale prices as marked, for a limited time.",
+}
+
+
+def render_picks(cards, hero, extras, week_label, style=None, variant=None):
     style = style or HERO_GRADIENTS[0]
-    d = DEPARTMENTS["store"]
-    utm = "utm_source=klaviyo&utm_medium=email&utm_campaign=new-store-digest"
+    v = variant or PICKS_VARIANT
+    d = DEPARTMENTS[v["dept"]]
+    utm = v["utm"]
     def link(path):
         return f"{STORE}{path}" + ("&" if "?" in path else "?") + utm
     esc = html.escape
     n = len(cards) + (1 if hero else 0)
     names = ([hero["title"]] if hero else []) + [c["title"] for c in cards]
-    preheader = "This week's picks: " + ", ".join(short_name(t, 30) for t in names[:4]) + " — free shipping over 199$."
+    preheader = v["preheader"] + ", ".join(short_name(t, 30) for t in names[:4]) + " — free shipping over 199$."
     btn = (f"display:block;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;"
            f"color:{WHITE};text-decoration:none;")
 
     def price_html(c, size=14, dark=False):
         # dark=True is for the black hero panel: coral sale price and light strike-through
         if c["compare"]:
+            # Deals only: a black "NN% OFF" flag after the red "Save $X" one; bordered like the buttons so it survives inversion
+            badge = (f' <span class="bg-band txt-white" style="display:inline-block;background:{BLACK};color:{WHITE};border:1px solid {WHITE};font-size:10px;font-weight:700;'
+                     f'letter-spacing:1px;text-transform:uppercase;padding:2px 6px;margin-left:4px;">{c["discount_pct"]}% OFF</span>'
+                     if v["pct_badge"] and c.get("discount_pct") else "")
             return (f'<span class="{"txt-coral" if dark else "txt-red"}" style="color:{CORAL if dark else RED};font-weight:700;">{esc(c["price"])}</span> '
                     f'<span class="{"txt-light" if dark else "txt-grey"}" style="color:{LIGHT_TXT if dark else GREY_TXT};text-decoration:line-through;font-size:12px;">{esc(c["compare"])}</span> '
                     f'<span class="bg-red txt-white" style="display:inline-block;background:{RED};color:{WHITE};font-size:10px;font-weight:700;'
-                    f'letter-spacing:1px;text-transform:uppercase;padding:3px 6px;margin-left:6px;">Save {esc(c["save"])}</span>')
+                    f'letter-spacing:1px;text-transform:uppercase;padding:3px 6px;margin-left:6px;">Save {esc(c["save"])}</span>') + badge
         return esc(c["price"])
 
     hero_html = ""
@@ -891,7 +940,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
         hero_html = f"""
   <tr><td bgcolor="{style['solid']}" background="{style['image']}" valign="top" style="background-color:{style['solid']};background-image:url({style['image']});background-repeat:no-repeat;background-size:cover;background-position:center top;padding:28px 24px 32px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">
-      <tr><td class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">PICK OF THE WEEK</td></tr>
+      <tr><td class="m-label txt-hero" style="font-size:11px;font-weight:bold;letter-spacing:2px;color:{BLACK};padding-bottom:12px">{v["hero_label"]}</td></tr>
       <tr><td align="center" bgcolor="{WHITE}" class="bg-tile" style="background-color:{WHITE};{WHITE_LOCK}border:1px solid {BLACK};padding:0;line-height:0;font-size:0">
         <a href="{url}" style="display:block;line-height:0"><img src="{product_img(hero['image'], width=1100)}" width="550" alt="{esc(hero['title'])}" style="display:block;width:100%;height:auto;border:0"></a>
       </td></tr>
@@ -935,13 +984,13 @@ def render_picks(cards, hero, extras, week_label, style=None):
 
     list_html = ""
     if cards:
-        list_title = "Also New This Week" if hero else "New This Week"
+        list_title = v["list_title_with_hero"] if hero else v["list_title"]
         rows = "".join(row_html(c, i == len(cards) - 1) for i, c in enumerate(cards))
         list_html = f"""
   <tr><td style="padding:30px 24px 0 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
       <td class="m-section txt-black" style="font-size:18px;font-weight:bold;color:{BLACK}">{list_title}</td>
-      <td align="right" class="m-label txt-black" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{link('/collections/newreleases')}" style="color:{BLACK};text-decoration:underline">VIEW ALL</a></td>
+      <td align="right" class="m-label txt-black" style="font-size:11px;font-weight:bold;letter-spacing:1px"><a href="{link(v['collection'])}" style="color:{BLACK};text-decoration:underline">VIEW ALL</a></td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
@@ -1021,7 +1070,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
                         f'<img src="{img}" width="25" height="25" alt="{a}" style="display:block;border:0;width:25px;height:25px"></a></td>'
                         for u, img, a in SOCIAL)
               + '</tr></table>')
-    intro = f"{n} new {'pick' if n == 1 else 'picks'} from across the store, chosen by the team. Here's what's worth a look this week."
+    intro = v["intro"](n)
 
     return f"""<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -1052,7 +1101,7 @@ def render_picks(cards, hero, extras, week_label, style=None):
   </td></tr>{hero_html}{list_html}
   <tr><td align="center" style="padding:28px 24px 40px 24px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-      <td bgcolor="{BLACK}" class="btn" style="background:{BLACK};border:1px solid {WHITE}"><a href="{link('/collections/newreleases')}" class="m-btn" style="{btn}padding:14px 26px;">Shop All New Releases</a></td>
+      <td bgcolor="{BLACK}" class="btn" style="background:{BLACK};border:1px solid {WHITE}"><a href="{link(v['collection'])}" class="m-btn" style="{btn}padding:14px 26px;">{v["cta"]}</a></td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:0 24px">
@@ -1093,6 +1142,31 @@ def render_picks(cards, hero, extras, week_label, style=None):
 </div>
 </body>
 </html>"""
+
+
+def render_sale(featured, extras, day_label, style=None):
+    """Deals e-mail: the picks frame (header, nav, intro, Shop All Deals, categories, blog, events, footer) with the
+    product rows replaced by one design-4B PNG banner per deal, largest discount first. Each card carries `banner`
+    (hosted URL or local file name) set by run_sale(). The frame is produced by render_picks() and spliced, so the
+    shared markup is never retyped; store output is untouched."""
+    hero, cards = featured[0], featured[1:]
+    frame = render_picks(cards, hero, extras, day_label, style, variant=SALE_VARIANT)
+    esc = html.escape
+    utm = SALE_VARIANT["utm"]
+    rows = []
+    for i, c in enumerate(featured):
+        alt = f"{c['vendor']} {c['title']} — {c['price']}" + (f" (was {c['compare']})" if c.get("compare") else "")
+        gap = "0" if i == 0 else "10px 0 0 0"                 # full-bleed banners, a thin gap between them (Igor, 2026-09-18)
+        rows.append(f'\n  <tr><td style="padding:{gap};line-height:0;font-size:0"><a href="{c["url"]}?{utm}" style="display:block;line-height:0">'
+                    f'<img src="{esc(c["banner"])}" width="600" alt="{esc(alt)}" style="display:block;width:100%;height:auto;border:0"></a></td></tr>')
+    # the frame's intro block (eyebrow · date, H1, intro line) is dropped: the banners say it all (Igor, 2026-09-18)
+    intro_start = '\n  <tr><td align="center" style="padding:36px 24px 26px 24px">'
+    cta = '\n  <tr><td align="center" style="padding:28px 24px 40px 24px">'
+    if frame.count(intro_start) != 1 or frame.count(cta) != 1 or 'class="m-intro' not in frame:
+        raise RuntimeError("render_sale: the picks frame changed; update the splice anchors")
+    head, tail = frame.split(cta, 1)
+    cut = head.index(intro_start)
+    return head[:cut] + "".join(rows) + cta + tail
 
 
 def render_launch(card, product, extras, style=None):
@@ -1512,6 +1586,112 @@ def run_hot(a, d, keep, sold_out, noise, now):
     return 0
 
 
+def run_sale(a, d, keep, sold_out, noise, now):
+    """Deals e-mail: every product tagged newsletter-sale goes out together in ONE e-mail, largest discount
+    first (hero). A tagged product without a real compare-at price is not a deal: it is left out, listed
+    under manifest.no_discount and untagged, so the team hears about it once instead of every hour.
+    Sold-out tagged products keep their tag and go out once purchasable again."""
+    if not a.from_json:
+        print("ERROR: 'sale' needs --from-json (Admin GraphQL response of products tagged newsletter-sale).")
+        return 2
+    discounted = [p for p in keep if has_discount(p)]
+    no_discount = [p for p in keep if not has_discount(p)]
+    if not discounted and not no_discount:
+        print(f"Deals: nothing tagged {TAG_SALE}. No file written.")
+        for p in sold_out:
+            print(f"  sold out: {p['title']}  (still tagged)")
+        for p in noise:
+            print(f"  noise:    {p['title']}  [{p.get('product_type')}]")
+        return 0
+    cards = group(discounted) if discounted else []
+    cards.sort(key=lambda c: (c.get("discount_pct") or 0, c["_price_num"]), reverse=True)
+    hero = cards.pop(0) if cards else None                       # the largest discount leads
+    if hero:
+        lead = next((p for p in discounted if p["id"] in hero["ids"]), None)
+        hero["excerpt_long"] = excerpt(lead.get("body_html", ""), lead["title"], limit=200) if lead else hero.get("excerpt")
+    featured = ([hero] if hero else []) + cards
+    extras = load_extras(a.extras)
+    hero_style = pick_hero_style(now.date(), a.hero_style)
+    local = now.astimezone(dt.timezone(dt.timedelta(hours=-4)))
+    day_label = local.strftime("%b %-d")
+    stamp = now.strftime("%Y-%m-%d")
+    html_path, json_path = OUT / f"sale-{stamp}.html", OUT / f"sale-{stamp}.json"
+    n = len(featured)
+    manifest = {
+        "dept": "sale", "label": d["label"], "generated_at": now.isoformat(),
+        "subject": None, "preview_text": None,
+        "campaign_name": f"Deals · {day_label} · {local.strftime('%-I%p').lower()}",
+        "tags": [TAG_SALE],
+        "untag": [{"id": i, "tags": [TAG_SALE]} for c in featured for i in c.get("admin_ids", [])]
+                 + [{"id": p["admin_id"], "tags": [TAG_SALE]} for p in no_discount if p.get("admin_id")],
+        "add_to_collection": None,                               # deals are not new releases
+        "hero_style": hero_style["name"], "hero": hero, "cards": cards,
+        "no_discount": [{"id": p.get("admin_id"), "title": p["title"]} for p in no_discount],
+        "blog": [{"title": x["title"], "url": article_url(x)} for x in extras["blog"][:2]],
+        "events": [{"title": x["title"], "url": article_url(x), "when": event_when(x)} for x in extras["events"][:3]],
+    }
+    if not hero:
+        # only products without a compare-at price were tagged: no e-mail, but the routine still untags + reports them
+        json_path.write_text(json.dumps(manifest, indent=2))
+        print(f"Deals: no discounted products; {len(no_discount)} tagged {TAG_SALE} without a compare-at price "
+              f"(listed in manifest no_discount, to untag). No e-mail.")
+        for p in no_discount:
+            print(f"  no discount: {p['title']}")
+        print(f"Manifest: {json_path}")
+        return 0
+    subject = subject_for("sale", featured)
+    preview = f"{n} {'deal' if n == 1 else 'deals'} live now at Moog Audio. {PREVIEW_SUFFIX}"
+    if len(preview) > 140:
+        preview = preview[:137].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    manifest["subject"], manifest["preview_text"] = subject, preview
+    # one design-4B PNG banner per deal (banner.py). Fonts are validated first so a missing Helvetica.ttf fails
+    # loudly before any file is written; the backdrop is rendered once and shared by every banner.
+    fonts = banner.load_fonts(a.font_dir)
+    key = os.environ.get("KLAVIYO_API_KEY") if (a.publish or a.update_campaign) else None
+    banners, logo_cache, backdrops = [], {}, {}
+    for i, c in enumerate(featured, 1):
+        h1, sub = split_title(c["title"], c["vendor"], c.get("type") or "")
+        gradient = banner.GRADIENT_ORDER[(i - 1) % len(banner.GRADIENT_ORDER)]   # a different colourway per banner
+        if gradient not in backdrops:
+            backdrops[gradient] = banner.build_background(gradient)
+        png, secs = banner.build_banner(c, h1, sub, backdrops[gradient], fonts, logo_cache)
+        slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
+        png_path = OUT / f"sale-{stamp}-{i}-{slug}.png"
+        png_path.write_bytes(png)
+        url = png_path.name                                   # relative to out/, for the local preview
+        if key:
+            url = klaviyo_upload_image(png, f"deal-{stamp}-{i}-{slug}", key)
+        else:
+            print(f"  note: banner {i} not hosted (no KLAVIYO_API_KEY / not publishing); HTML points at out/{png_path.name}")
+        c["headline"], c["subline"], c["banner"], c["gradient"] = h1, sub, url, gradient
+        banners.append({"product_id": (c.get("admin_ids") or [None])[0], "png": url, "width": banner.W, "height": banner.H,
+                        "gradient": gradient})
+        print(f"  banner {i}: {png_path.name}  {len(png) // 1024} KB  {secs:.1f}s  [{gradient}]")
+    manifest["banners"] = banners
+    html_path.write_text(render_sale(featured, extras, day_label, hero_style))
+    json_path.write_text(json.dumps(manifest, indent=2))
+    rc = klaviyo_step(a, json_path, html_path)
+    if rc:
+        return rc
+    print(f"Deals: {len(keep)} tagged {TAG_SALE}, {n} with a discount in the e-mail, {len(no_discount)} without (untagged, not shown)")
+    print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
+    print(f"  TOP DEAL {hero['vendor']} | {hero['title']} | {hero['price']} (was {hero['compare']}, {hero['discount_pct']}% off)  [background: {hero_style['name']}]")
+    for c in cards:
+        print(f"  - {c['vendor']} | {c['title']} | {c['price']}"
+              + (f" (was {c['compare']}, {c['discount_pct']}% off)" if c.get("compare") else " (family, no single compare-at)"))
+    for p in no_discount:
+        print(f"  no discount: {p['title']}  (untagged, not in the e-mail)")
+    for p in sold_out:
+        print(f"  sold out: {p['title']}  (still tagged)")
+    for p in noise:
+        print(f"  noise:    {p['title']}  [{p.get('product_type')}]")
+    if extras["blog"]:
+        print("  blog:   " + " / ".join(x["title"] for x in extras["blog"][:2]))
+    if extras["events"]:
+        print("  events: " + " / ".join(f"{x['title']} [{event_when(x)[0] or 'no date'}]" for x in extras["events"][:3]))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dept", choices=DEPARTMENTS)
@@ -1526,6 +1706,8 @@ def main():
                     help="instead of a new campaign, put the freshly rendered HTML on this existing DRAFT campaign (needs KLAVIYO_API_KEY)")
     ap.add_argument("--hero-style", metavar="NAME", help="force a hero background (default: rotate by date): "
                     + ", ".join(g["name"] for g in HERO_GRADIENTS))
+    ap.add_argument("--font-dir", metavar="DIR", default=os.environ.get("MOOG_FONT_DIR") or str(ROOT / "assets" / "fonts"),
+                    help="sale mode: folder holding Helvetica.ttf (default assets/fonts; env MOOG_FONT_DIR). Arial.ttf accepted for local work")
     a = ap.parse_args()
     d = DEPARTMENTS[a.dept]
     now = dt.datetime.now(dt.timezone.utc)
@@ -1555,6 +1737,8 @@ def main():
     keep = [p for p in fresh if sellable(p) and not is_noise(p)]
     if a.dept == "hot":
         return run_hot(a, d, keep, sold_out, noise, now)
+    if a.dept == "sale":
+        return run_sale(a, d, keep, sold_out, noise, now)
     hero = None
     if a.dept == "store":
         heroes = [p for p in keep if TAG_HERO in p.get("tags", [])]

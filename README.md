@@ -68,9 +68,10 @@ Where the content comes from — all from the Shopify product, nothing hand-writ
   centre-cropped by the Shopify CDN so the tiles line up.
 - description: `long_blurb()` — the first paragraphs of the description (no headings, no lists,
   no repeated title line), cut at a sentence end near 480 characters.
-- specifications: `spec_rows()` — the first bullet list in the description, max six items.
-  "Label: value" bullets render as two columns and the box is titled SPECIFICATIONS; plain bullets
-  render full-width under KEY FEATURES; no list at all → no box.
+- specifications: `spec_rows()` — the first bullet list in the description (a list under a heading
+  containing "spec" wins). A real spec sheet, mostly "Label: value" bullets, shows up to ten rows as two
+  columns under SPECIFICATIONS; a plain feature list is trimmed to six and rendered full-width under
+  KEY FEATURES; no list at all → no box.
 - static copy lines live in `LAUNCH_NOTE` and `LAUNCH_BAND` in digest.py.
 - backdrop colour: `LAUNCH_STYLES` — coral (design default), graphite, slate, sage, gold, blush;
   each a hosted 600x1600 PNG from `assets/launch-<name>.png` (make_gradient.py, 160deg). Choose per
@@ -87,6 +88,49 @@ ahead of time. Launch mode keeps unpublished products (the weekly digest does no
 carries `product.live=false`, and the run report starts with a NOT LIVE YET warning. Igor then
 schedules the Klaviyo campaign for the embargo time; the product must be published in Shopify
 before that moment or the links 404.
+
+## Deals e-mail — `sale` mode (weekly, Wednesday 10am Toronto, since 2026-09-18)
+
+Tag the discounted products you want in the e-mail `newsletter-sale` in Shopify; the weekly cloud routine
+(Wednesday 10am Toronto — see ROUTINE.md, prompt in ROUTINE_SALE_PROMPT.md) puts **all of them** into ONE
+Klaviyo **draft** and removes the tags. Nothing is ever sent automatically, and deals are NOT added to
+New Releases (`add_to_collection` is null in the manifest).
+
+- What counts as a deal: the variant the card shows (the first purchasable one) has a compare-at price
+  above its price, i.e. the storefront shows a strike-through. A tagged product without one is left out,
+  listed under `no_discount` in the manifest and untagged as well, so the team hears about it once in the
+  run report and can re-tag it after fixing the price. Sold-out tagged products keep the tag and go out
+  once they are purchasable again. No category filter: hardware, software downloads, open box… all qualify.
+- Layout (since 2026-09-17, design claude.ai/design "Homepage Banner" 4B): one **900×675 PNG banner per deal**,
+  stacked edge to edge across the full 600px e-mail column with a 10px gap, largest discount first, straight
+  under the FREE SHIPPING bar — the picks frame's eyebrow / title / intro block is not shown (the banners say
+  it all; Igor 2026-09-18). Header, nav, Shop All Deals, categories, blog, events and footer stay as in the picks. Each banner is rendered by `banner.py`
+  in pure standard-library Python during the run: a gradient backdrop with a radial wash, dotted highlight and
+  skewed sheen — **a different colourway per banner**, rotating indigo → coral → teal → lavender → graphite
+  (`banner.GRADIENT_ORDER`; the manifest records `gradient`); the **brand logo** from the vendor's Shopify brand
+  collection image, keyed off its white box — monochrome logos are turned into a white cutout that keeps their
+  inner detail (dark strokes → white, light details → see-through), coloured logos keep their colours; a
+  collection image that is a photo rather than a logo, or a brand without a collection, gets the vendor name
+  in white type instead; the **product cut out of its white studio background** (Shopify CDN `format=png`
+  conversion, then a border-connected white key, so light front panels stay solid); a red disc rotated −8° with
+  "NN% / OFF", stuck to the product's top-left corner (never up in the logo row); the headline and sub-line
+  from `split_title()`; sale price with the struck regular price; a black SHOP HERE button. Baked images look
+  the same in light and dark mode, which is why the layout is an image. The design's grain overlay is left out
+  (it makes the PNG ten times larger). Banners weigh ~190–350 KB and take 1.5–3 s each plus ~4 s per colourway
+  for the backdrop.
+- Font: `assets/fonts/Helvetica.ttf` is **required** (the design system's file; see assets/fonts/README.md).
+  Without it the run stops with `ERROR: Deals banners need a font…` and writes nothing. `--font-dir DIR`
+  or `MOOG_FONT_DIR` point at another folder (macOS Arial) for local work only.
+- Hosting: with `--publish` every banner is uploaded to Klaviyo's image library (`POST /api/image-upload/`)
+  before the campaign is created and the HTML uses the hosted https URLs; the manifest lists them under
+  `banners[]`. Without a key the HTML points at the local `out/*.png` files for preview.
+- Subject: "Deals at Moog Audio: <A>, <B> + N more" (priciest first, like the picks). Preview: "N deals live
+  now at Moog Audio. FREE SHIPPING on most orders over 199$". Campaign name "Deals · <Mon D> · <h>pm".
+
+Run by hand: `python3 digest.py sale --from-json out/sale.json --extras out/extras.json [--publish] [--dry-run]
+[--font-dir DIR]` (local sample: out/sale-test.json, not in the repo). Output: `out/sale-<date>.html/.json` and
+`out/sale-<date>-<n>-<slug>.png` per deal. Every card carries `discount_pct` (also in the other modes, null when
+there is no compare-at), and in sale mode `headline`, `subline`, `banner`.
 
 ## Departments & schedule
 
