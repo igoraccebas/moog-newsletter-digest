@@ -57,8 +57,9 @@ Toronto in summer. Cost note: each run is a short cloud session even when nothin
 
 Third routine, same environment and Klaviyo secret as the other two, Shopify connector only. Prompt:
 ROUTINE_SALE_PROMPT.md. Schedule: `0 14 * * 3` (UTC) = Wednesday 10am Toronto (9am after the November
-clock change, like the picks routine). Igor chose weekly over hourly on 2026-09-18. Routine id: see the
-line added when it was created (below). The cron is UTC and saving from the web form can rewrite it —
+clock change, like the picks routine). Igor chose weekly over hourly on 2026-09-18. Routine id: trig_01U3oWJx1p45423D6kqxvxgS — ENABLED
+2026-09-18 14:14 UTC (created through the routines API from this repo's prompt copy; first scheduled run
+2026-09-23). The cron is UTC and saving from the web form can rewrite it —
 re-check after any UI edit.
 
 - Everything tagged `newsletter-sale` by Wednesday morning goes out together in ONE draft; the tags are
