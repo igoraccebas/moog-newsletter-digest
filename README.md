@@ -124,6 +124,11 @@ New Releases (`add_to_collection` is null in the manifest).
 - Hosting: with `--publish` every banner is uploaded to Klaviyo's image library (`POST /api/image-upload/`)
   before the campaign is created and the HTML uses the hosted https URLs; the manifest lists them under
   `banners[]`. Without a key the HTML points at the local `out/*.png` files for preview.
+- Failures (since 2026-09-23): a product photo or logo that cannot be downloaded (egress blocked, CDN down) stops the
+  run with `ERROR: Deals banner N …` before any campaign is created, so the routine reports FAILED and keeps the tags.
+  Transient 429/5xx/timeouts are retried 3 times first. Only two cases still fall back to the vendor name in white
+  type: no brand collection (404), or a collection image that is a photo rather than a logo on white. Fix the latter
+  by uploading a logo-on-white PNG as that collection's image in Shopify (done for Universal Audio on 2026-09-23).
 - Subject: "Deals at Moog Audio: <A>, <B> + N more" (priciest first, like the picks). Preview: "N deals live
   now at Moog Audio. FREE SHIPPING on most orders over 199$". Campaign name "Deals · <Mon D> · <h>pm".
 

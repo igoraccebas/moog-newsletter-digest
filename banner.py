@@ -15,12 +15,15 @@ costs a few seconds (CDN fetches + PNG decode + text). Fonts: assets/fonts/Helve
 (Igor's file; decision #15); --font-dir / MOOG_FONT_DIR point at another folder for local work (Arial).
 There is deliberately NO automatic fallback so a cloud run can never render in the wrong face by accident.
 """
-import json, math, os, re, struct, time, urllib.request, zlib
+import json, math, os, re, struct, time, urllib.error, urllib.request, zlib
 from collections import deque
 
 W, H = 900, 675                      # design 4B frame
 PAD_X, PAD_Y = 56, 48                # design padding: 48px 56px
 LOGO_W, LOGO_H = 240, 56             # "Brand logo (white)" slot
+LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the standard box (height-bound, not width-bound)
+    "Universal Audio": (240, 84),    # diamond + wordmark; 84 still clears the 20px gap above mid_top with room to spare
+}
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
 WHITE, BLACK, RED = (255, 255, 255), (0, 0, 0), (193, 39, 45)   # #c1272d = sale red
@@ -44,9 +47,27 @@ USER_AGENT = "MoogDigest/1.0"
 
 
 # ------------------------------------------------------------------------------------------------ network ----
-def fetch(url, timeout=40):
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=timeout) as r:
-        return r.read()
+class BannerError(RuntimeError):
+    """A banner cannot be built as designed (product photo or logo unreachable). digest.py stops the run on it
+    instead of publishing a banner with a hole in it (2026-09-23: cdn.shopify.com egress blocked -> 4 blank banners)."""
+
+
+def fetch(url, timeout=40, attempts=3):
+    """GET with retries for transient failures (429, 5xx, timeouts). A proxy refusal (egress blocked) or a 4xx
+    other than 429 is final and raised at once."""
+    for n in range(attempts):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if (e.code != 429 and e.code < 500) or n == attempts - 1:
+                raise
+            wait = e.headers.get("Retry-After", "")
+            time.sleep(min(float(wait), 20) if wait.replace(".", "", 1).isdigit() else 3 * (n + 1))
+        except (urllib.error.URLError, TimeoutError) as e:
+            if "Tunnel connection failed" in str(e) or n == attempts - 1:
+                raise
+            time.sleep(3 * (n + 1))
 
 
 def cdn_png(src, width, height):
@@ -169,7 +190,7 @@ def encode_png(w, h, rows, opaque=True):
 
 
 # -------------------------------------------------------------------------------------------- compositing ----
-def key_white(w, h, rows, lo=240, hi=252):
+def key_white(w, h, rows, lo=240, hi=252, holes=True):
     """Remove a white studio background: near-white pixels that are CONNECTED to the image border become
     transparent (soft ramp between lo and hi, so PNGs converted from JPEG lose their off-white halo too).
     White areas enclosed by the product (a light front panel, a white knob) are left alone, unlike a plain
@@ -193,15 +214,45 @@ def key_white(w, h, rows, lo=240, hi=252):
             if not seen[y * w + x] and light(x, y):
                 seen[y * w + x] = 1
                 q.append((x, y))
-    while q:
-        x, y = q.popleft()
+    def clear(x, y):
         line = rows[y]
         m = min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
         line[4 * x + 3] = 0 if m >= hi else int(line[4 * x + 3] * (hi - m) / (hi - lo))
+
+    while q:
+        x, y = q.popleft()
+        clear(x, y)
         for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
             if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
                 seen[ny * w + nx] = 1
                 q.append((nx, ny))
+
+    # Backdrop showing through a gap in the product (inside a headband, a handle, a cable loop) is enclosed, so
+    # the pass above misses it. Key an enclosed region too when it is almost all pure backdrop white (>= hi,
+    # where panels are 200-240) and large enough that a white knob or printed label does not qualify.
+    # Off for logos: the white inside a mark (UA's diamond) is part of the design and logo_treatment needs it.
+    if not holes:
+        return rows
+    min_area = max(200, int(0.004 * w * h))
+    for sy in range(h):
+        for sx in range(w):
+            if seen[sy * w + sx] or not light(sx, sy):
+                continue
+            seen[sy * w + sx] = 1
+            region, pure, stack = [], 0, [(sx, sy)]
+            while stack:
+                x, y = stack.pop()
+                region.append((x, y))
+                line = rows[y]
+                if min(line[4 * x], line[4 * x + 1], line[4 * x + 2]) >= hi:
+                    pure += 1
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
+                        seen[ny * w + nx] = 1
+                        stack.append((nx, ny))
+            if len(region) >= min_area and pure >= 0.9 * len(region):
+                for x, y in region:
+                    clear(x, y)
     return rows
 
 
@@ -622,13 +673,11 @@ def _flatten(contours, tf, steps=8):
                                    (1 - t) ** 2 * y0 + 2 * (1 - t) * t * y + t * t * ny))
                 prev = (nx, ny, True)
                 i += 1
-                if not non:
-                    pts[i] = (nx, ny, True)
         polys.append(poly)
     return polys
 
 
-def _rasterize(polys, S=4):
+def _rasterize(polys, S=8):
     """Nonzero-winding scanline fill, S sub-rows, exact horizontal coverage -> (x0, y0, w, h, coverage rows 0..255)."""
     xs = [p[0] for poly in polys for p in poly]
     ys = [p[1] for poly in polys for p in poly]
@@ -743,7 +792,7 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     Returns (w, h, rows) or None when nothing is left after keying."""
     def pass_(width, height):
         w, h, rows = decode_png(fetch(cdn_png(src, width, height)))
-        key_white(w, h, rows)
+        key_white(w, h, rows, holes=not white_mask)
         if white_mask:
             # a logo sits on a white box; if keying removed almost nothing the collection image is a photo or
             # a banner (Universal Audio's is a red product shot) — not usable as a logo
@@ -780,13 +829,19 @@ def fetch_logo(vendor, cache):
     if vendor in cache:
         return cache[vendor]
     result = None
+    box_w, box_h = LOGO_SIZE_OVERRIDES.get(vendor, (LOGO_W, LOGO_H))
     try:
         data = json.loads(fetch(f"{STORE}/collections/{vendor_handle(vendor)}.json", timeout=20))
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
         if src:
-            result = fetch_fit_trim(src, LOGO_W, LOGO_H, white_mask=True)
-    except Exception as e:                                # 404 for brands without a collection, photo instead of logo, network
+            result = fetch_fit_trim(src, box_w, box_h, white_mask=True)
+    except (urllib.error.HTTPError, ValueError) as e:
+        if isinstance(e, urllib.error.HTTPError) and e.code != 404:
+            raise BannerError(f"logo for {vendor} could not be fetched (HTTP {e.code})") from e
+        # 404 = brand without a collection; ValueError = collection image is a photo, not a logo (by design)
         print(f"  note: no logo for {vendor} ({type(e).__name__}: {str(e)[:60]}); using the vendor name")
+    except Exception as e:
+        raise BannerError(f"logo for {vendor} could not be fetched ({type(e).__name__}: {str(e)[:80]})") from e
     cache[vendor] = result
     return result
 
@@ -834,8 +889,9 @@ def build_banner(card, headline, subline, background, fonts, logo_cache):
     try:
         cut = fetch_product_cutout(card["image"], box_w, box_h)
     except Exception as e:
-        cut = None
-        print(f"  note: product image skipped for {card['title'][:40]} ({type(e).__name__}: {e})")
+        raise BannerError(f"product image for {card['title'][:50]} could not be fetched ({type(e).__name__}: {str(e)[:80]})") from e
+    if not cut:
+        raise BannerError(f"product image for {card['title'][:50]} is empty after removing its white background")
     cut_x, cut_y = None, None
     if cut:
         pw, ph, prow = cut

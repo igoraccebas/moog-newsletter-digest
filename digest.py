@@ -1654,7 +1654,11 @@ def run_sale(a, d, keep, sold_out, noise, now):
         gradient = banner.GRADIENT_ORDER[(i - 1) % len(banner.GRADIENT_ORDER)]   # a different colourway per banner
         if gradient not in backdrops:
             backdrops[gradient] = banner.build_background(gradient)
-        png, secs = banner.build_banner(c, h1, sub, backdrops[gradient], fonts, logo_cache)
+        try:
+            png, secs = banner.build_banner(c, h1, sub, backdrops[gradient], fonts, logo_cache)
+        except banner.BannerError as e:
+            print(f"ERROR: Deals banner {i} ({c['title'][:50]}): {e}. No campaign created or updated; tags left in place.")
+            return 2
         slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
         png_path = OUT / f"sale-{stamp}-{i}-{slug}.png"
         png_path.write_bytes(png)
