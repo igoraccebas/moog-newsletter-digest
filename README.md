@@ -183,8 +183,10 @@ Two layers, because no single trick covers every client. `DARK_MODE` in digest.p
    light *and* dark blocks, so buttons invert there too; Android flips only light ones, so black
    buttons stay black with their white hairline border). The layout is built so inverting it still
    looks intentional:
-   - the MOOG AUDIO wordmark is live text, not a white JPEG, so it flips with its background;
-   - image-only cells (hero product card, product shots, payment logos, Patch Rewards, social
+   - the MOOG AUDIO logo (Igor's file, 2026-10-06; `assets/moog-audio-logo-*.png`, hosted on Klaviyo as
+     `LOGO` / `LOGO_WHITE`) is an image in a WHITE_LOCK cell, so it stays black-on-white in every mode;
+     the launch e-mail's black bar uses the white-on-black version;
+   - other image-only cells (hero product card, product shots, payment logos, Patch Rewards, social
      icons) are locked white with `WHITE_LOCK` (`background-image: linear-gradient(#fff,#fff)`,
      which Gmail does not recolour). Never put text inside a WHITE_LOCK cell — Gmail would still
      lighten it;

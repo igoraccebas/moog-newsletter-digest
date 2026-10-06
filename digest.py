@@ -22,7 +22,9 @@ import banner            # Deals banner renderer (design 4B): stdlib PNG/text to
 
 STORE = "https://moogaudio.com"
 KL_IMG = "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/"
-LOGO = KL_IMG + "7da9e136-1a23-4b1a-a7e4-cc813a440e95.jpeg"        # MOOG AUDIO wordmark, 600px
+# MOOG AUDIO wordmark (Igor, 2026-10-06), trimmed 930x103; sources in assets/moog-audio-logo-*.png
+LOGO = "https://cdn.klaviyomail.com/company/R2MsVA/images/1cb59de2-57d4-49f9-bd76-6e9714b55411.png"        # black on white
+LOGO_WHITE = "https://cdn.klaviyomail.com/company/R2MsVA/images/7b766807-eb20-4bca-9cca-838881e677fe.png"  # white on black
 IMG_PAYMENTS = KL_IMG + "4a0085a2-ce1a-4e34-a1fe-43dc088a03b2.png"  # affirm | flexiti | paypLan
 IMG_REWARDS = KL_IMG + "e4ded96b-c43b-473e-80d3-9bcca41a798a.jpeg"  # Patch Rewards block
 SOCIAL = [("https://www.facebook.com/moogaudio", KL_IMG + "b5f1ea80-3801-42ca-80e4-4e7a3be7731c.jpeg", "Facebook"),
@@ -236,7 +238,7 @@ MOBILE_CSS = (
     " .m-small{font-size:14px!important;line-height:20px!important;}"
     " .m-legal{font-size:12px!important;line-height:17px!important;}"
     " .m-full{width:100%!important;max-width:100%!important;height:auto!important;}"
-    " .m-logo{font-size:24px!important;line-height:30px!important;letter-spacing:4px!important;}"
+    " .m-logo{width:220px!important;}"
     " .m-launch-h1{font-size:30px!important;line-height:34px!important;}"
     " .m-pad{padding-left:20px!important;padding-right:20px!important;}"
     " .m-pad2{padding-left:14px!important;padding-right:14px!important;}"
@@ -842,8 +844,8 @@ def render(dept, cards, week_label):
     <tr><td align="center" style="padding:10px 0 4px 0;font-family:{FONT};font-size:10px;color:{GREY_TXT};">
       Can't see this email? {{% web_view 'View in Your Browser' %}}
     </td></tr>
-    <tr><td align="center" style="padding:6px 0 14px 0;">
-      <a href="{link('/')}"><img src="{LOGO}" width="600" alt="Moog Audio" style="display:block;width:100%;max-width:600px;height:auto;border:0;"></a>
+    <tr><td align="center" style="padding:18px 0 18px 0;{WHITE_LOCK}">
+      <a href="{link('/')}"><img src="{LOGO}" width="260" alt="Moog Audio" style="display:block;width:260px;max-width:100%;height:auto;border:0;"></a>
     </td></tr>
     <tr><td style="background:{BLACK};"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{nav_cells}</tr></table></td></tr>
     <tr><td style="height:3px;line-height:3px;font-size:0;background:{CORAL};background-image:{gradient};">&nbsp;</td></tr>
@@ -1088,7 +1090,7 @@ def render_picks(cards, hero, extras, week_label, style=None, variant=None):
 <span style="display:none;font-size:1px;color:#ececec;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden">{esc(preheader)}</span>
 <table role="presentation" class="bg-body" cellpadding="0" cellspacing="0" border="0" width="100%" align="center" style="width:100%;max-width:600px;margin:0 auto;background:{WHITE}">
   <tr><td align="center" class="txt-grey" style="padding:10px 0 4px 0;font-size:10px;color:{GREY_TXT}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
-  <tr><td align="center" class="m-logo txt-black" style="padding:18px 0 16px 0;font-size:28px;line-height:34px;letter-spacing:5px;font-weight:400;color:{BLACK}"><a href="{link('/')}" style="color:{BLACK};text-decoration:none">MOOG&nbsp;AUDIO</a></td></tr>
+  <tr><td align="center" style="padding:20px 0 18px 0;{WHITE_LOCK}"><a href="{link('/')}"><img src="{LOGO}" width="260" alt="Moog Audio" class="m-logo" style="display:block;width:260px;max-width:100%;height:auto;border:0"></a></td></tr>
   <tr><td bgcolor="{BLACK}" class="bg-nav" style="background:{BLACK}">
     <table role="presentation" class="m-nav" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>{nav_cells}</tr></table>
   </td></tr>
@@ -1328,7 +1330,7 @@ def render_launch(card, product, extras, style=None):
   <tr><td align="center" class="txt-hero" style="padding:10px 0 4px 0;font-size:10px;color:{BLACK}">Can't see this email? {{% web_view 'View in Your Browser' %}}</td></tr>
   <tr><td bgcolor="{BLACK}" class="bg-nav m-pad" style="background:{BLACK};padding:16px 32px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%"><tr>
-      <td class="txt-white" style="font-size:18px;font-weight:bold;color:{WHITE};letter-spacing:2px"><a href="{link('/')}" style="color:{WHITE};text-decoration:none">MOOG&nbsp;AUDIO</a></td>
+      <td valign="middle"><a href="{link('/')}"><img src="{LOGO_WHITE}" width="160" alt="Moog Audio" style="display:block;width:160px;height:auto;border:0"></a></td>
       <td align="right" class="m-label txt-sand" style="font-size:11px;font-weight:bold;letter-spacing:1px;color:{bg['accent']}">PRODUCT LAUNCH</td>
     </tr></table>
   </td></tr>
