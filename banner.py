@@ -823,6 +823,38 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     return crop(rows, (max(0, x0), max(0, y0), min(w, x1), min(h, y1)))
 
 
+def local_logo(vendor, box_w, box_h):
+    """Logo from assets/logos/<vendor-handle>.png (black or coloured on white) for brands whose Shopify collection
+    has no image: keyed and treated like a collection logo, trimmed, then area-averaged down to fit the box.
+    None when there is no such file."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logos", vendor_handle(vendor) + ".png")
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        w, h, rows = decode_png(f.read())
+    key_white(w, h, rows, holes=False)
+    logo_treatment(w, h, rows, saturation_threshold=2)     # near-black marks have a meaningless saturation: always white
+    box = bbox_alpha(w, h, rows)
+    if not box:
+        return None
+    w, h, rows = crop(rows, box)
+    scale = min(box_w / w, box_h / h, 1.0)
+    nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+    if (nw, nh) == (w, h):
+        return w, h, rows
+    out = []
+    for y in range(nh):
+        ya, yb = int(y * h / nh), max(int(y * h / nh) + 1, int((y + 1) * h / nh))
+        line = bytearray(4 * nw)
+        for x in range(nw):
+            xa, xb = int(x * w / nw), max(int(x * w / nw) + 1, int((x + 1) * w / nw))
+            n = (yb - ya) * (xb - xa)
+            for c in range(4):
+                line[4 * x + c] = sum(rows[j][4 * i + c] for j in range(ya, yb) for i in range(xa, xb)) // n
+        out.append(line)
+    return nw, nh, out
+
+
 def fetch_logo(vendor, cache):
     """White silhouette of the brand-collection logo (Shopify collection image, keyed and filled white),
     trimmed and fitted to the logo box. None when the brand has no collection or no image."""
@@ -835,6 +867,8 @@ def fetch_logo(vendor, cache):
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
         if src:
             result = fetch_fit_trim(src, box_w, box_h, white_mask=True)
+        else:
+            result = local_logo(vendor, box_w, box_h)
     except (urllib.error.HTTPError, ValueError) as e:
         if isinstance(e, urllib.error.HTTPError) and e.code != 404:
             raise BannerError(f"logo for {vendor} could not be fetched (HTTP {e.code})") from e
