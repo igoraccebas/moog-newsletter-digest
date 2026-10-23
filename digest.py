@@ -1565,13 +1565,15 @@ def pick_banner_slot(key):
     reviewer chooses where it actually goes."""
     if os.environ.get("MOOG_BANNERS_SLOT"):
         return os.environ["MOOG_BANNERS_SLOT"]
-    slots = [x for x in banner_app_call("GET", "slots", None, key).get("slots", []) if x.get("status", "active") == "active"]
+    listed = banner_app_call("GET", "slots", None, key).get("slots", [])
+    slots = [x for x in listed if str(x.get("status", "active")).lower() == "active"]
     keys = [x["key"] for x in slots]
     if WEB_BANNER_SLOT in keys:
         return WEB_BANNER_SLOT
     home = [x["key"] for x in slots if "homepage" in (x["key"] + " " + x.get("name", "")).lower()]
     if not (home or keys):
-        raise RuntimeError("banner app lists no active slot")
+        raise RuntimeError("banner app lists no active slot (it returned: "
+                           + (", ".join(f"{x.get('key')} [{x.get('status')}]" for x in listed) or "no slots at all") + ")")
     print(f"  note: banner app slots: {', '.join(keys)}; filing banners under {(home or keys)[0]}")
     return (home or keys)[0]
 
@@ -1683,7 +1685,8 @@ def run_web_banners_only(a, keep, now):
     sent = [e for e in res if e.get("submitted")]
     print(f"Website banners: {len(sent)} of {len(res)} sent to the banner app")
     for e in res:
-        print(f"  {e['design']} {e['title'][:60]} -> " + (f"{e['banner_id']} ({e.get('status')})" if e.get("submitted") else f"NOT SENT: {e.get('error') or 'no key'}"))
+        print(f"  {e['design']} {e['title'][:60]} -> " + (f"{e['banner_id']} ({e.get('status')})" if e.get("submitted")
+              else f"NOT SENT: {e.get('error') or 'see the WARNING above'}"))
     return 0 if len(sent) == len(res) else 1
 
 
