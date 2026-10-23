@@ -81,3 +81,14 @@ re-check after any UI edit.
   The manifest lists the hosted URLs under `banners[]`; step 4 of the prompt checks they are https.
 - Report: ONE PushNotification every run — "Deals draft ready - <date>", "Deals: nothing tagged - <date>",
   "Deals: N tagged without a discount - <date>" or "Deals run FAILED - <date>".
+
+---
+
+# Website banners in all three routines (since 2026-10-23)
+
+After each Klaviyo draft, `digest.py` sends one design-2A (picks, launch) or 3A (deals) homepage banner per product,
+English + French, to the Moog banner scheduling app (pending, no booking; see README). The three live routine prompts
+were updated the same day through the routines API (step 3 describes it, step 7 reports web_banners[]).
+Environment needs: secret `MOOG_BANNERS_API_KEY` (live moogaudio.com store key) and egress to
+`banner-scheduler--moog-banner-scheduler.us-east4.hosted.app` and `storage.googleapis.com` (both added by Igor 2026-10-23).
+A banner problem never fails a run; it shows as a WARNING line in the run report.
