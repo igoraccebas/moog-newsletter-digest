@@ -1640,6 +1640,25 @@ def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, subm
     return out
 
 
+def run_web_banners_only(a, keep, now):
+    """--web-banners-only: website banners for the given products and nothing else (no e-mail, no Klaviyo, no state,
+    no Shopify writes). For tests and manual re-sends. 'sale' keeps the discounted products and uses design 3A,
+    every other mode design 2A. Always submits (needs MOOG_BANNERS_API_KEY). Exit 1 when a banner was not sent."""
+    sale = a.dept == "sale"
+    cards = group([p for p in keep if has_discount(p)] if sale else keep)
+    cards.sort(key=lambda c: ((c.get("discount_pct") or 0) if sale else 0, c["_price_num"]), reverse=True)
+    if not cards:
+        print("Website banners: no products. Nothing sent.")
+        return 0
+    stamp = now.strftime("%Y-%m-%d")
+    res = web_banner_step(cards, a, stamp, f"{a.dept}-web", sale=sale, submit=True, name_prefix=a.banner_name_prefix)
+    sent = [e for e in res if e.get("submitted")]
+    print(f"Website banners: {len(sent)} of {len(res)} sent to the banner app")
+    for e in res:
+        print(f"  {e['design']} {e['title'][:60]} -> " + (f"{e['banner_id']} ({e.get('status')})" if e.get("submitted") else f"NOT SENT: {e.get('error') or 'no key'}"))
+    return 0 if len(sent) == len(res) else 1
+
+
 def run_hot(a, d, keep, sold_out, noise, now):
     """Product Launch e-mail: exactly one product per run (the most recently published one tagged
     newsletter-hot); any others stay tagged and go out on the following runs."""
@@ -1850,6 +1869,10 @@ def main():
                     + ", ".join(g["name"] for g in HERO_GRADIENTS))
     ap.add_argument("--font-dir", metavar="DIR", default=os.environ.get("MOOG_FONT_DIR") or str(ROOT / "assets" / "fonts"),
                     help="sale and store modes: folder holding Helvetica.ttf (default assets/fonts; env MOOG_FONT_DIR). Arial.ttf accepted for local work")
+    ap.add_argument("--web-banners-only", action="store_true",
+                    help="only render the website banners (2A, or 3A in sale mode) and send them to the banner app; no e-mail")
+    ap.add_argument("--banner-name-prefix", default="", metavar="TEXT",
+                    help="prefix for the banner app's internal name, e.g. 'TEST · '")
     a = ap.parse_args()
     d = DEPARTMENTS[a.dept]
     now = dt.datetime.now(dt.timezone.utc)
@@ -1877,6 +1900,8 @@ def main():
     sold_out = [p for p in fresh if not sellable(p)]
     noise = [p for p in fresh if sellable(p) and is_noise(p)]
     keep = [p for p in fresh if sellable(p) and not is_noise(p)]
+    if a.web_banners_only:
+        return run_web_banners_only(a, keep, now)
     if a.dept == "hot":
         return run_hot(a, d, keep, sold_out, noise, now)
     if a.dept == "sale":

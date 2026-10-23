@@ -167,6 +167,8 @@ homepage banner sent to the Moog banner scheduling app, after the Klaviyo draft 
   blocked, app down) prints `WARNING: website banner N … not sent: …` and is recorded in the manifest.
 - Manifest `web_banners[]`: product_id, design, gradient, headline {en, fr}, files {en, fr} (local out/ names),
   submitted, banner_id, status ("library" = waiting in the app, no booking), link, error.
+- Banners only, no e-mail (tests, manual re-sends): `python3 digest.py <store|hot|sale> --from-json FILE --web-banners-only
+  [--banner-name-prefix 'TEST · ']` — no Klaviyo, no state, no Shopify writes; always submits (needs the key).
 - Network: the cloud environment must allow `banner-scheduler--moog-banner-scheduler.us-east4.hosted.app` and
   `storage.googleapis.com` (uploads), besides moogaudio.com / cdn.shopify.com already used by the e-mail banners.
 
