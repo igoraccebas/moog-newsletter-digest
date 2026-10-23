@@ -1146,15 +1146,16 @@ def render_picks(cards, hero, extras, week_label, style=None, variant=None):
 </html>"""
 
 
-def render_sale(featured, extras, day_label, style=None):
-    """Deals e-mail: the picks frame (header, nav, intro, Shop All Deals, categories, blog, events, footer) with the
-    product rows replaced by one design-4B PNG banner per deal, largest discount first. Each card carries `banner`
-    (hosted URL or local file name) set by run_sale(). The frame is produced by render_picks() and spliced, so the
-    shared markup is never retyped; store output is untouched."""
+def render_banners(featured, extras, label, style=None, variant=None):
+    """Banner e-mail (Deals: design 4B, one per deal; picks: design 4A, one per new product): the picks frame
+    (header, nav, Shop All button, categories, blog, events, footer) with the intro, hero and product rows replaced
+    by one full-width PNG banner per card, in order. Each card carries `banner` (hosted URL or local file name) set
+    by make_banners(). The frame is produced by render_picks() and spliced, so the shared markup is never retyped."""
+    v = variant or PICKS_VARIANT
     hero, cards = featured[0], featured[1:]
-    frame = render_picks(cards, hero, extras, day_label, style, variant=SALE_VARIANT)
+    frame = render_picks(cards, hero, extras, label, style, variant=v)
     esc = html.escape
-    utm = SALE_VARIANT["utm"]
+    utm = v["utm"]
     rows = []
     for i, c in enumerate(featured):
         alt = f"{c['vendor']} {c['title']} — {c['price']}" + (f" (was {c['compare']})" if c.get("compare") else "")
@@ -1165,7 +1166,7 @@ def render_sale(featured, extras, day_label, style=None):
     intro_start = '\n  <tr><td align="center" style="padding:36px 24px 26px 24px">'
     cta = '\n  <tr><td align="center" style="padding:28px 24px 40px 24px">'
     if frame.count(intro_start) != 1 or frame.count(cta) != 1 or 'class="m-intro' not in frame:
-        raise RuntimeError("render_sale: the picks frame changed; update the splice anchors")
+        raise RuntimeError("render_banners: the picks frame changed; update the splice anchors")
     head, tail = frame.split(cta, 1)
     cut = head.index(intro_start)
     return head[:cut] + "".join(rows) + cta + tail
@@ -1588,6 +1589,41 @@ def run_hot(a, d, keep, sold_out, noise, now):
     return 0
 
 
+def make_banners(featured, a, stamp, prefix, eyebrow=None):
+    """One 900x675 PNG banner per card (banner.py): design 4B for deals (eyebrow=None), design 4A for new releases
+    (eyebrow = the line above the headline: a string, or a function card -> string). Fonts are validated first so a
+    missing Helvetica.ttf fails loudly before any file is written; each backdrop colourway is rendered once. With
+    --publish / --update-campaign each PNG is uploaded to Klaviyo, else the card points at the local out/ file.
+    Sets headline / subline / banner / gradient on every card and returns the manifest's banners[] list.
+    Raises banner.BannerError (with the banner number) when a product photo or logo cannot be fetched."""
+    fonts = banner.load_fonts(a.font_dir)
+    key = os.environ.get("KLAVIYO_API_KEY") if (a.publish or a.update_campaign) else None
+    banners, logo_cache, backdrops = [], {}, {}
+    for i, c in enumerate(featured, 1):
+        h1, sub = split_title(c["title"], c["vendor"], c.get("type") or "")
+        gradient = banner.GRADIENT_ORDER[(i - 1) % len(banner.GRADIENT_ORDER)]   # a different colourway per banner
+        if gradient not in backdrops:
+            backdrops[gradient] = banner.build_background(gradient)
+        line = eyebrow(c) if callable(eyebrow) else eyebrow
+        try:
+            png, secs = banner.build_banner(c, h1, sub, backdrops[gradient], fonts, logo_cache, eyebrow=line)
+        except banner.BannerError as e:
+            raise banner.BannerError(f"banner {i} ({c['title'][:50]}): {e}") from e
+        slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
+        png_path = OUT / f"{prefix}-{stamp}-{i}-{slug}.png"
+        png_path.write_bytes(png)
+        url = png_path.name                                   # relative to out/, for the local preview
+        if key:
+            url = klaviyo_upload_image(png, f"{prefix}-{stamp}-{i}-{slug}", key)
+        else:
+            print(f"  note: banner {i} not hosted (no KLAVIYO_API_KEY / not publishing); HTML points at out/{png_path.name}")
+        c["headline"], c["subline"], c["banner"], c["gradient"] = h1, sub, url, gradient
+        banners.append({"product_id": (c.get("admin_ids") or [None])[0], "png": url, "width": banner.W, "height": banner.H,
+                        "gradient": gradient})
+        print(f"  banner {i}: {png_path.name}  {len(png) // 1024} KB  {secs:.1f}s  [{gradient}]")
+    return banners
+
+
 def run_sale(a, d, keep, sold_out, noise, now):
     """Deals e-mail: every product tagged newsletter-sale goes out together in ONE e-mail, largest discount
     first (hero). A tagged product without a real compare-at price is not a deal: it is left out, listed
@@ -1646,35 +1682,13 @@ def run_sale(a, d, keep, sold_out, noise, now):
     if len(preview) > 140:
         preview = preview[:137].rsplit(" ", 1)[0].rstrip(",;:") + "…"
     manifest["subject"], manifest["preview_text"] = subject, preview
-    # one design-4B PNG banner per deal (banner.py). Fonts are validated first so a missing Helvetica.ttf fails
-    # loudly before any file is written; the backdrop is rendered once and shared by every banner.
-    fonts = banner.load_fonts(a.font_dir)
-    key = os.environ.get("KLAVIYO_API_KEY") if (a.publish or a.update_campaign) else None
-    banners, logo_cache, backdrops = [], {}, {}
-    for i, c in enumerate(featured, 1):
-        h1, sub = split_title(c["title"], c["vendor"], c.get("type") or "")
-        gradient = banner.GRADIENT_ORDER[(i - 1) % len(banner.GRADIENT_ORDER)]   # a different colourway per banner
-        if gradient not in backdrops:
-            backdrops[gradient] = banner.build_background(gradient)
-        try:
-            png, secs = banner.build_banner(c, h1, sub, backdrops[gradient], fonts, logo_cache)
-        except banner.BannerError as e:
-            print(f"ERROR: Deals banner {i} ({c['title'][:50]}): {e}. No campaign created or updated; tags left in place.")
-            return 2
-        slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
-        png_path = OUT / f"sale-{stamp}-{i}-{slug}.png"
-        png_path.write_bytes(png)
-        url = png_path.name                                   # relative to out/, for the local preview
-        if key:
-            url = klaviyo_upload_image(png, f"deal-{stamp}-{i}-{slug}", key)
-        else:
-            print(f"  note: banner {i} not hosted (no KLAVIYO_API_KEY / not publishing); HTML points at out/{png_path.name}")
-        c["headline"], c["subline"], c["banner"], c["gradient"] = h1, sub, url, gradient
-        banners.append({"product_id": (c.get("admin_ids") or [None])[0], "png": url, "width": banner.W, "height": banner.H,
-                        "gradient": gradient})
-        print(f"  banner {i}: {png_path.name}  {len(png) // 1024} KB  {secs:.1f}s  [{gradient}]")
-    manifest["banners"] = banners
-    html_path.write_text(render_sale(featured, extras, day_label, hero_style))
+    # one design-4B PNG banner per deal (banner.py)
+    try:
+        manifest["banners"] = make_banners(featured, a, stamp, "sale")
+    except banner.BannerError as e:
+        print(f"ERROR: Deals {e}. No campaign created or updated; tags left in place.")
+        return 2
+    html_path.write_text(render_banners(featured, extras, day_label, hero_style, SALE_VARIANT))
     json_path.write_text(json.dumps(manifest, indent=2))
     rc = klaviyo_step(a, json_path, html_path)
     if rc:
@@ -1713,7 +1727,7 @@ def main():
     ap.add_argument("--hero-style", metavar="NAME", help="force a hero background (default: rotate by date): "
                     + ", ".join(g["name"] for g in HERO_GRADIENTS))
     ap.add_argument("--font-dir", metavar="DIR", default=os.environ.get("MOOG_FONT_DIR") or str(ROOT / "assets" / "fonts"),
-                    help="sale mode: folder holding Helvetica.ttf (default assets/fonts; env MOOG_FONT_DIR). Arial.ttf accepted for local work")
+                    help="sale and store modes: folder holding Helvetica.ttf (default assets/fonts; env MOOG_FONT_DIR). Arial.ttf accepted for local work")
     a = ap.parse_args()
     d = DEPARTMENTS[a.dept]
     now = dt.datetime.now(dt.timezone.utc)
@@ -1783,7 +1797,19 @@ def main():
     stamp = now.strftime("%Y-%m-%d")
     html_path = OUT / f"{a.dept}-{stamp}.html"
     json_path = OUT / f"{a.dept}-{stamp}.json"
-    html_path.write_text(render_picks(cards, hero, extras, week_label, hero_style) if a.dept == "store" else render(a.dept, cards, week_label))
+    banners = None
+    if a.dept == "store":
+        # one design-4A "New release" PNG banner per product (banner.py), the Pick of the Week first (Igor, 2026-10-23)
+        featured = ([hero] if hero else []) + cards
+        try:
+            banners = make_banners(featured, a, stamp, "store",
+                                   eyebrow=lambda c: "Pick of the week" if c is hero else "New release")
+        except banner.BannerError as e:
+            print(f"ERROR: Picks {e}. No campaign created or updated; tags left in place.")
+            return 2
+        html_path.write_text(render_banners(featured, extras, week_label, hero_style, PICKS_VARIANT))
+    else:
+        html_path.write_text(render(a.dept, cards, week_label))
     json_path.write_text(json.dumps({
         "dept": a.dept, "label": d["label"], "generated_at": now.isoformat(), "window_days": a.days,
         "subject": subject, "preview_text": preview, "label": d.get("title") or f"New in {d['label']}",
@@ -1794,7 +1820,7 @@ def main():
         "add_to_collection": {**NEW_RELEASES_COLLECTION,
                               "product_ids": ([i for i in hero.get("admin_ids", [])] if hero else [])
                                              + [i for c in cards for i in c.get("admin_ids", [])]} if a.dept == "store" else None,
-        "hero_style": hero_style["name"], "hero": hero, "cards": cards,
+        "hero_style": hero_style["name"], "hero": hero, "cards": cards, "banners": banners,
         "blog": [{"title": x["title"], "url": article_url(x)} for x in extras["blog"][:2]],
         "events": [{"title": x["title"], "url": article_url(x), "when": event_when(x)} for x in extras["events"][:3]],
     }, indent=2))

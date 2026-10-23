@@ -1,5 +1,7 @@
 """
-Moog Audio - Deals banner renderer (design "Homepage Banner" 4B, claude.ai/design, Igor 2026-09-17).
+Moog Audio - e-mail banner renderer (design "Homepage Banner", claude.ai/design): 4B "On sale" for the Deals
+e-mail (Igor 2026-09-17), 4A "New release" for the Tuesday/Friday picks (Igor 2026-10-23). Same frame and backdrop;
+4A has an eyebrow line above the headline and no price or discount disc.
 
 Pure standard library, imported by digest.py (the entry point stays `python3 digest.py sale ...`). Everything
 that touches pixels lives here so digest.py stays the pipeline:
@@ -8,7 +10,7 @@ that touches pixels lives here so digest.py stays the pipeline:
   compositing                 key_white / as_white_mask / bbox_alpha / crop / blit / fill_rect / draw_disc
   backgrounds                 linear_gradient / radial_wash / build_background
   text                        Font (TrueType: cmap 4, loca/glyf, hmtx) / draw_text / text_width
-  the banner                  build_banner(card, headline, subline, background, fonts, logo_cache)
+  the banner                  build_banner(card, headline, subline, background, fonts, logo_cache, eyebrow=None)
 
 Pure Python is slow per pixel: the 900x675 background takes ~2 s and is built ONCE per run; each banner then
 costs a few seconds (CDN fetches + PNG decode + text). Fonts: assets/fonts/Helvetica.ttf is required
@@ -18,7 +20,7 @@ There is deliberately NO automatic fallback so a cloud run can never render in t
 import json, math, os, re, struct, time, urllib.error, urllib.request, zlib
 from collections import deque
 
-W, H = 900, 675                      # design 4B frame
+W, H = 900, 675                      # design 4A / 4B frame
 PAD_X, PAD_Y = 56, 48                # design padding: 48px 56px
 LOGO_W, LOGO_H = 240, 56             # "Brand logo (white)" slot
 LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the standard box (height-bound, not width-bound)
@@ -852,9 +854,10 @@ def fetch_product_cutout(src, box_w, box_h):
 
 
 # --------------------------------------------------------------------------------------------------- banner ----
-def build_banner(card, headline, subline, background, fonts, logo_cache):
-    """One design-4B banner for a deal card (digest.py card dict: vendor, title, image, price, compare, discount_pct).
-    Returns (png_bytes, seconds)."""
+def build_banner(card, headline, subline, background, fonts, logo_cache, eyebrow=None):
+    """One banner for a card (digest.py card dict: vendor, title, image, price, compare, discount_pct).
+    eyebrow=None -> design 4B (deal: discount disc, sale + struck price). eyebrow="NEW RELEASE" -> design 4A
+    (eyebrow line above the headline, no price, no disc). Returns (png_bytes, seconds)."""
     t0 = time.perf_counter()
     cv = [bytearray(r) for r in background]
     col_x, col_w = PAD_X, W - 2 * PAD_X
@@ -866,8 +869,12 @@ def build_banner(card, headline, subline, background, fonts, logo_cache):
     lines, hsize = fit_headline(fonts, headline.upper(), col_w)
     line_h = hsize * 0.98
     sub_size, price_size, strike_size, btn_size = 17, 22, 14, 16
+    eyebrow_size = 12
     btn_h = 13 + btn_size + 13
-    block_h = len(lines) * line_h + 8 + sub_size * 1.3 + GAP + price_size + GAP + btn_h
+    if eyebrow:   # 4A: eyebrow, gap 18 - 8 (the title group's margin-top:-8px), title + sub-line, gap 18, button
+        block_h = eyebrow_size + GAP - 8 + len(lines) * line_h + 8 + sub_size * 1.3 + GAP + btn_h
+    else:         # 4B: title + sub-line, gap, price, gap, button
+        block_h = len(lines) * line_h + 8 + sub_size * 1.3 + GAP + price_size + GAP + btn_h
     block_top = H - PAD_Y - block_h
 
     # ---- logo box (top centre)
@@ -897,7 +904,7 @@ def build_banner(card, headline, subline, background, fonts, logo_cache):
         pw, ph, prow = cut
         cut_x, cut_y = box_x + (box_w - pw) // 2, box_y + (box_h - ph) // 2
         blit(cv, W, H, pw, ph, prow, cut_x, cut_y)
-    if card.get("discount_pct"):
+    if card.get("discount_pct") and not eyebrow:
         if cut_x is not None:
             # sticker on the product's top-left corner: mostly outside the photo, overlapping the corner a little
             # (Igor, 2026-09-18: the design's fixed position covered wide products)
@@ -916,6 +923,10 @@ def build_banner(card, headline, subline, background, fonts, logo_cache):
 
     # ---- bottom block
     y = block_top
+    if eyebrow:
+        draw_text(cv, W, H, bold, eyebrow.upper(), eyebrow_size, cx, y + eyebrow_size * 0.8, WHITE, tracking=0.14,
+                  align="center", embolden=emb, opacity=0.9)
+        y += eyebrow_size + GAP - 8
     for line in lines:
         draw_text(cv, W, H, bold, line, hsize, cx, y + hsize * 0.78, WHITE, tracking=-0.025, align="center", embolden=emb)
         y += line_h
@@ -923,7 +934,9 @@ def build_banner(card, headline, subline, background, fonts, logo_cache):
     draw_text(cv, W, H, regular, subline, sub_size, cx, y + sub_size * 0.95, WHITE, align="center")
     y += sub_size * 1.3 + GAP
     sale_w = text_width(bold, card["price"], price_size)
-    if card.get("compare"):
+    if eyebrow:
+        pass                                              # 4A shows no price
+    elif card.get("compare"):
         reg_w = text_width(regular, card["compare"], strike_size)
         start = cx - (sale_w + 10 + reg_w) / 2
         draw_text(cv, W, H, bold, card["price"], price_size, start, y + price_size * 0.8, WHITE, embolden=emb)
@@ -931,7 +944,8 @@ def build_banner(card, headline, subline, background, fonts, logo_cache):
         fill_rect(cv, W, H, int(start + sale_w + 10), int(y + price_size * 0.8 - strike_size * 0.32), int(reg_w), 1, WHITE, alpha=190)
     else:
         draw_text(cv, W, H, bold, card["price"], price_size, cx, y + price_size * 0.8, WHITE, align="center", embolden=emb)
-    y += price_size + GAP
+    if not eyebrow:
+        y += price_size + GAP
     shop_w, here_w = text_width(bold, "SHOP", btn_size, 0.08), text_width(regular, "HERE", btn_size, 0.08)
     btn_w = 20 + shop_w + 6 + here_w + 20
     bx = int(cx - btn_w / 2)

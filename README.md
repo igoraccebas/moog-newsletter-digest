@@ -18,9 +18,15 @@ Weekly "new arrivals" email per department, built from Shopify and left as a
    or later; past events are dropped, and the section disappears when nothing is upcoming.
    Layout follows reference-template-igor.html (hero, rows, blog, events, boutique band,
    value props, standard footer).
-3. Sold-out products (no purchasable variant) are skipped. Everything else is listed,
-   hero items first (by price), as full-width rows: image left, details right
-   (vendor, title, short excerpt from the description, price, VIEW PRODUCT). Stock status is
+3. Sold-out products (no purchasable variant) are skipped. Everything else goes out as **one
+   900×675 PNG banner per product** (since 2026-10-23, design claude.ai/design "Homepage Banner" **4A**
+   "New release"), the Pick of the Week first, then the rest by price, stacked full-width with a 10px gap
+   straight under the FREE SHIPPING bar — the same frame as the Deals e-mail (intro block, coral hero and
+   rows are not shown). 4A is 4B without the price and discount disc: brand logo, product cut-out, an
+   eyebrow line ("PICK OF THE WEEK" on the hero, "NEW RELEASE" on the others), headline + sub-line from
+   `split_title()`, SHOP HERE. Same renderer, colourway rotation, font requirement, Klaviyo hosting and
+   failure rules as the Deals banners (see below); errors read `ERROR: Picks banner N …` and stop the run
+   before any campaign is created. The manifest lists the hosted URLs under `banners[]`. Stock status is
    never shown: emails are static and availability changes.
 4. A Klaviyo campaign is created as a **Draft** (never sent automatically) with the
    generated template, subject and preview text. Audience: Newsletter Moog Audio (R5ggT7)
