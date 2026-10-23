@@ -50,8 +50,9 @@ PREVIEW_SUFFIX = "FREE SHIPPING on most orders over 199$"
 # Klaviyo publish settings (drafts only — this script never creates a send job)
 # Website banners (since 2026-10-23): every product of every e-mail (picks, launch, deals) also gets a design-2A
 # (new) or 3A (deal) homepage banner, EN + FR, submitted to the Moog banner scheduling app as a PENDING item with
-# no booking: a human approves it and picks the slot/position in the app. The API needs a slotKey, so items are
-# filed under WEB_BANNER_SLOT. Key: env MOOG_BANNERS_API_KEY (Authorization: Bearer mbs_...).
+# no booking: a human approves it and picks the slot/position in the app. The API needs a slotKey: env
+# MOOG_BANNERS_SLOT if set, else WEB_BANNER_SLOT when the app has it, else the app's first active homepage slot
+# (pick_banner_slot). Key: env MOOG_BANNERS_API_KEY (Authorization: Bearer mbs_...).
 BANNER_APP_API = "https://banner-scheduler--moog-banner-scheduler.us-east4.hosted.app/api/v1/"
 WEB_BANNER_SLOT = "homepage-grid-3"
 KLAVIYO_API = "https://a.klaviyo.com/api/"
@@ -1539,10 +1540,12 @@ def fetch_fr_title(url):
         return None, None
 
 
-def banner_app_call(method, path, body, key, idempotency_key):
-    req = urllib.request.Request(BANNER_APP_API + path, method=method, data=json.dumps(body).encode(), headers={
-        "Authorization": f"Bearer {key}", "content-type": "application/json", "accept": "application/json",
-        "Idempotency-Key": idempotency_key, "User-Agent": banner.USER_AGENT})
+def banner_app_call(method, path, body, key, idempotency_key=None):
+    headers = {"Authorization": f"Bearer {key}", "accept": "application/json", "User-Agent": banner.USER_AGENT}
+    if body is not None:
+        headers.update({"content-type": "application/json", "Idempotency-Key": idempotency_key})
+    req = urllib.request.Request(BANNER_APP_API + path, method=method,
+                                 data=None if body is None else json.dumps(body).encode(), headers=headers)
     for attempt in range(4):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -1556,20 +1559,38 @@ def banner_app_call(method, path, body, key, idempotency_key):
             raise RuntimeError(f"banner app {method} {path}: HTTP {e.code} {detail}") from e
 
 
-def submit_web_banner(jpegs, alt, link, name, ref, key):
+def pick_banner_slot(key):
+    """slotKey for submissions: MOOG_BANNERS_SLOT, else WEB_BANNER_SLOT if the app lists it, else the first active
+    slot whose key or name mentions 'homepage', else the first active slot. The slot only files the item; the
+    reviewer chooses where it actually goes."""
+    if os.environ.get("MOOG_BANNERS_SLOT"):
+        return os.environ["MOOG_BANNERS_SLOT"]
+    slots = [x for x in banner_app_call("GET", "slots", None, key).get("slots", []) if x.get("status", "active") == "active"]
+    keys = [x["key"] for x in slots]
+    if WEB_BANNER_SLOT in keys:
+        return WEB_BANNER_SLOT
+    home = [x["key"] for x in slots if "homepage" in (x["key"] + " " + x.get("name", "")).lower()]
+    if not (home or keys):
+        raise RuntimeError("banner app lists no active slot")
+    print(f"  note: banner app slots: {', '.join(keys)}; filing banners under {(home or keys)[0]}")
+    return (home or keys)[0]
+
+
+def submit_web_banner(jpegs, alt, link, name, ref, key, slot=WEB_BANNER_SLOT):
     """Upload the EN + FR JPEGs (signed PUT URLs from POST /uploads) and create ONE pending banner without a
-    booking. The Idempotency-Keys derive from ref, so a re-run for the same product and day cannot create a
-    duplicate. Returns the app's response (bannerId, status...)."""
+    booking. The banner's Idempotency-Key derives from ref and slot, so a re-run for the same product and day
+    cannot create a duplicate; the uploads get a fresh key per attempt (signed URLs expire after 15 minutes,
+    a stray upload is harmless). Returns the app's response (bannerId, status...)."""
     locales = sorted(jpegs)
     files = [{"filename": f"{ref.replace(':', '-')}-{loc}.jpg", "mimeType": "image/jpeg", "bytes": len(jpegs[loc])} for loc in locales]
-    ups = banner_app_call("POST", "uploads", {"files": files}, key, f"{ref}:uploads")["uploads"]
+    ups = banner_app_call("POST", "uploads", {"files": files}, key, f"{ref}:uploads:{int(time.time())}")["uploads"]
     for loc, up in zip(locales, ups):
         req = urllib.request.Request(up["uploadUrl"], data=jpegs[loc], method=up.get("method", "PUT"), headers=up.get("headers") or {})
         with urllib.request.urlopen(req, timeout=120) as r:
             r.read()
-    body = {"slotKey": WEB_BANNER_SLOT, "internalName": name, "sourceRef": ref, "alt": alt, "link": link,
+    body = {"slotKey": slot, "internalName": name, "sourceRef": ref, "alt": alt, "link": link,
             "files": {"desktop": {loc: up["uploadId"] for loc, up in zip(locales, ups)}}}
-    return banner_app_call("POST", "banners", body, key, f"{ref}:banner")
+    return banner_app_call("POST", "banners", body, key, f"{ref}:{slot}:banner")
 
 
 def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, submit=None, name_prefix=""):
@@ -1585,6 +1606,13 @@ def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, subm
     fonts = banner.load_fonts(a.font_dir)
     backdrops, logo_cache, out = {}, {}, []
     kind = ("On sale", "En solde") if sale else ("New release", "Nouveauté")
+    slot = None
+    if submit and key:
+        try:
+            slot = pick_banner_slot(key)
+        except Exception as e:
+            print(f"WARNING: website banners rendered but NOT sent: could not read the banner app's slots ({type(e).__name__}: {str(e)[:200]})")
+            key = None
     for i, c in enumerate(featured, 1):
         gradient = banner.GRADIENT_ORDER[(i - 1) % len(banner.GRADIENT_ORDER)]
         h1, sub = split_title(c["title"], c["vendor"], c.get("type") or "")
@@ -1620,15 +1648,15 @@ def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, subm
                 name = f"{name_prefix}{kind[0]} · {h1} · {stamp}"
                 ref = f"moog-digest:{prefix}:{stamp}:{pid}"
                 try:
-                    res = submit_web_banner(jpegs, alt, link, name, ref, key)
+                    res = submit_web_banner(jpegs, alt, link, name, ref, key, slot)
                 except RuntimeError as e:
                     if "LINK_TARGET_NOT_FOUND" not in str(e):
                         raise
                     # the app's store cannot see the product (not published yet, or another store): plain URL link
                     link = {"type": "url", "url": c["url"]}
                     print(f"  note: banner app does not know product {link['url']}; linking the URL instead")
-                    res = submit_web_banner(jpegs, alt, link, name, ref + ":url", key)
-                entry.update(submitted=True, banner_id=res.get("bannerId") or res.get("id"), status=res.get("status"), link=link)
+                    res = submit_web_banner(jpegs, alt, link, name, ref + ":url", key, slot)
+                entry.update(submitted=True, banner_id=res.get("bannerId") or res.get("id"), status=res.get("status"), link=link, slot=slot)
                 print(f"  web banner {i}: sent to the banner app -> {entry['banner_id']} ({entry['status']})")
         except Exception as e:
             entry["error"] = f"{type(e).__name__}: {str(e)[:300]}"
