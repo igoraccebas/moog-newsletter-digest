@@ -1580,8 +1580,8 @@ def pick_banner_slot(key):
 
 def submit_web_banner(jpegs, alt, link, name, ref, key, slot=WEB_BANNER_SLOT):
     """Upload the EN + FR JPEGs (signed PUT URLs from POST /uploads) and create ONE pending banner without a
-    booking. The banner's Idempotency-Key derives from ref and slot, so a re-run for the same product and day
-    cannot create a duplicate; the uploads get a fresh key per attempt (signed URLs expire after 15 minutes,
+    booking. The banner's Idempotency-Key derives from ref, slot and the images, so a re-run for the same product
+    and day with the same images cannot create a duplicate (a changed design is a new banner); the uploads get a fresh key per attempt (signed URLs expire after 15 minutes,
     a stray upload is harmless). Returns the app's response (bannerId, status...)."""
     locales = sorted(jpegs)
     files = [{"filename": f"{ref.replace(':', '-')}-{loc}.jpg", "mimeType": "image/jpeg", "bytes": len(jpegs[loc])} for loc in locales]
@@ -1592,7 +1592,8 @@ def submit_web_banner(jpegs, alt, link, name, ref, key, slot=WEB_BANNER_SLOT):
             r.read()
     body = {"slotKey": slot, "internalName": name, "sourceRef": ref, "alt": alt, "link": link,
             "files": {"desktop": {loc: up["uploadId"] for loc, up in zip(locales, ups)}}}
-    return banner_app_call("POST", "banners", body, key, f"{ref}:{slot}:banner")
+    digest_ = hashlib.sha1(b"".join(jpegs[loc] for loc in locales)).hexdigest()[:12]
+    return banner_app_call("POST", "banners", body, key, f"{ref}:{slot}:{digest_}")
 
 
 def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, submit=None, name_prefix=""):

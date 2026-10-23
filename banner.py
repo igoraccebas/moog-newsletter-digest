@@ -942,6 +942,11 @@ def wrap_words(font, text, size, max_w, tracking):
     return lines
 
 
+def ellipsis(face):
+    """'…' when the font has the glyph (assets/fonts/Helvetica.ttf does not), else three dots."""
+    return "…" if 0x2026 in face.cmap else "..."
+
+
 def fit_headline(fonts, text, max_w):
     """Design: 40px bold uppercase, at most two lines; 32px when a line would exceed the column; then trimmed."""
     face, tr = fonts.face(True), -0.025
@@ -950,10 +955,11 @@ def fit_headline(fonts, text, max_w):
         if len(lines) <= 2 and all(text_width(face, l, size, tr) <= max_w for l in lines):
             return lines, size
     lines = wrap_words(face, text, 32, max_w, tr)[:2]
-    while len(lines) == 2 and text_width(face, lines[1] + "…", 32, max_w and tr) > max_w and " " in lines[1]:
+    dots = ellipsis(face)
+    while len(lines) == 2 and text_width(face, lines[1] + dots, 32, tr) > max_w and " " in lines[1]:
         lines[1] = lines[1].rsplit(" ", 1)[0]
     if len(lines) == 2:
-        lines[1] = lines[1].rstrip(",;:") + "…"
+        lines[1] = lines[1].rstrip(",;:") + dots
     return lines, 32
 
 
@@ -1136,9 +1142,11 @@ def build_banner(card, headline, subline, background, fonts, logo_cache, eyebrow
 # ----------------------------------------------------------------------------------------- website banner ----
 # Design 2A (new release) / 3A (on sale) at 1024x512, rendered at 2000x1000 (the banner app's recommended size,
 # 2:1, JPEG under 1 MB). Left column 44%: logo 200x48, eyebrow (2A) or red ON SALE flag (3A), headline 52px,
-# sub-line 19px, SHOP HERE. Right column 56%: the product in an 872:581 box, 56px from the right edge; 3A adds a
-# red SAVE NN% disc top right. No price on website banners (Igor, 2026-10-23); 3A's "Ends <date>" is left out
-# (Shopify has no sale end date).
+# sub-line 19px, SHOP HERE. Right column 56%: the product in an 872:581 box, 56px from the right edge.
+# 2A shows no price (Igor, 2026-10-23). 3A (deals) shows the price row of the design - sale price, struck regular
+# price, SAVE $N - above SHOP HERE, and the red SAVE NN% disc is stuck to the product's top-left corner and tilted
+# -8 degrees exactly like the deals e-mail banner, so it always sits on the product (Igor, 2026-10-23). 3A's
+# "Ends <date>" is left out (Shopify has no sale end date).
 WEB_W, WEB_H = 2000, 1000
 WEB_SCALE = WEB_W / 1024
 WEB_MAX_BYTES = 1_000_000
@@ -1146,6 +1154,26 @@ WEB_COPY = {
     "en": {"new": "New release", "sale": "On sale", "save": "Save", "shop": ("Shop", "Here")},
     "fr": {"new": "Nouveauté", "sale": "En solde", "save": "Économisez", "shop": ("Magasinez", "ici")},
 }
+SAVE_PINK = (255, 217, 211)          # #ffd9d3, the design's SAVE $N colour
+
+
+def _amount(text):
+    """'$2,299.00 CAD' -> 2299.0 (None when there is no number)."""
+    digits = re.sub(r"[^0-9.]", "", text or "")
+    return float(digits) if digits else None
+
+
+def web_money(text, locale, short=False):
+    """Card price string in the banner's locale: EN '$2,299.00 CAD', FR '2 299,00 $ CAD'. short=True drops the
+    cents when they are zero and the currency code (the design's 'Save $400')."""
+    v = _amount(text)
+    if v is None:
+        return text or ""
+    num = f"{v:,.0f}" if short and v == int(v) else f"{v:,.2f}"
+    if locale == "fr":
+        num = num.replace(",", " ").replace(".", ",")
+        return f"{num} $" + ("" if short else " CAD")
+    return f"${num}" + ("" if short else " CAD")
 
 
 def _web_product_box():
@@ -1178,9 +1206,10 @@ def _fit_lines(face, text, sizes, max_w, tracking, max_lines):
     lines = wrap_words(face, text, size, max_w, tracking)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
-        while text_width(face, lines[-1] + "…", size, tracking) > max_w and " " in lines[-1]:
+        dots = ellipsis(face)
+        while text_width(face, lines[-1] + dots, size, tracking) > max_w and " " in lines[-1]:
             lines[-1] = lines[-1].rsplit(" ", 1)[0]
-        lines[-1] = lines[-1].rstrip(",;:-") + "…"
+        lines[-1] = lines[-1].rstrip(",;:-") + dots
     return lines, size
 
 
@@ -1208,22 +1237,31 @@ def build_web_banner(card, headline, subline, background, fonts, assets, locale=
     label_size = 12 * S
     label_h = (label_size + 10 * S) if sale else label_size * 1.15
     btn_size, btn_h = 16 * S, (13 + 16 + 13) * S
+    price_h = (22 + 16) * S if sale else 0                 # 3A: price row, then a 16px gap above the button
     stack_h = (logo_box_h + 20 * S + label_h + 10 * S + len(lines) * hsize * 0.98
-               + (10 * S + len(sub_lines) * sub_size * 1.3 if sub_lines else 0) + 24 * S + btn_h)
+               + (10 * S + len(sub_lines) * sub_size * 1.3 if sub_lines else 0) + 24 * S + price_h + btn_h)
     y = (WEB_H - stack_h) / 2
 
     # ---- right column: product, then (3A) the SAVE disc over its top-right
     bx, by, bw, bh = _web_product_box()
     pw, ph, prow = cut
-    blit(cv, WEB_W, WEB_H, pw, ph, prow, bx + (bw - pw) // 2, by + (bh - ph) // 2)
+    cut_x, cut_y = bx + (bw - pw) // 2, by + (bh - ph) // 2
+    blit(cv, WEB_W, WEB_H, pw, ph, prow, cut_x, cut_y)
     if sale and card.get("discount_pct"):
-        r = 66 * S
-        dcx, dcy = (1024 - 56) * S - r, 48 * S + r
+        # same rule as the e-mail banner: centred just outside the product's top-left corner, overlapping it a
+        # little; never into the text column (it may reach into the 24px gutter) and never off the top edge
+        d = 132 * S
+        r = d / 2
+        dcx = max(cut_x - 0.30 * d, (1024 * 0.44 - 24) * S + r)
+        dcy = max(cut_y - 0.10 * d, 24 * S + r)
         draw_disc(cv, WEB_W, WEB_H, dcx, dcy, r, RED)
-        top = dcy - (13 + 4 + 46 + 4) * S / 2
-        draw_text(cv, WEB_W, WEB_H, regular, copy["save"].upper(), 13 * S, dcx, top + 13 * S * 0.8, WHITE, tracking=0.08, align="center")
-        draw_text(cv, WEB_W, WEB_H, bold, f"{card['discount_pct']}%", 46 * S, dcx, top + (13 + 4) * S + 46 * S * 0.8, WHITE,
-                  tracking=-0.03, align="center", embolden=emb)
+        ang = -8
+        ca, sa = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+        top = -(13 + 4 + 46 + 4) * S / 2                  # 3A disc content: SAVE 13px, 4px, NN% 46px, 4px
+        for text, size, dy, tr, is_bold in ((copy["save"].upper(), 13 * S, top + 13 * S * 0.8, 0.08, False),
+                                            (f"{card['discount_pct']}%", 46 * S, top + 17 * S + 46 * S * 0.8, -0.03, True)):
+            draw_text(cv, WEB_W, WEB_H, fonts.face(is_bold), text, size, dcx - dy * sa, dcy + dy * ca, WHITE, tracking=tr,
+                      angle=ang, align="center", embolden=fonts.embolden(is_bold))
 
     # ---- left column
     if logo:
@@ -1253,6 +1291,25 @@ def build_web_banner(card, headline, subline, background, fonts, assets, locale=
             draw_text(cv, WEB_W, WEB_H, regular, line, sub_size, col_x, y + sub_size * 0.95, WHITE)
             y += sub_size * 1.3
     y += 24 * S
+    if sale:
+        sale_t = web_money(card["price"], locale)
+        reg_t = web_money(card["compare"], locale) if card.get("compare") else ""
+        save_t = f"{copy['save']} {web_money(card['save'], locale, short=True)}".upper() if card.get("save") else ""
+        base = y + 22 * S * 0.8
+        sale_w = text_width(bold, sale_t, 22 * S)
+        reg_w = text_width(regular, reg_t, 14 * S) if reg_t else 0
+        save_w = text_width(bold, save_t, 12 * S, 0.06) if save_t else 0
+        if sale_w + 10 * S + reg_w + 10 * S + save_w > col_w:
+            save_t, save_w = "", 0                        # a long price: the disc already says how much is saved
+        draw_text(cv, WEB_W, WEB_H, bold, sale_t, 22 * S, col_x, base, WHITE, embolden=emb)
+        x = col_x + sale_w + 10 * S
+        if reg_t:
+            draw_text(cv, WEB_W, WEB_H, regular, reg_t, 14 * S, x, base, WHITE, opacity=0.75)
+            fill_rect(cv, WEB_W, WEB_H, int(x), int(base - 14 * S * 0.32), int(reg_w), max(1, round(S)), WHITE, alpha=190)
+            x += reg_w + 10 * S
+        if save_t:
+            draw_text(cv, WEB_W, WEB_H, bold, save_t, 12 * S, x, base, SAVE_PINK, tracking=0.06, embolden=emb)
+        y += price_h
     shop, here = copy["shop"]
     shop_w, here_w = text_width(bold, shop.upper(), btn_size, 0.08), text_width(regular, here.upper(), btn_size, 0.08)
     fill_rect(cv, WEB_W, WEB_H, int(col_x), int(y), int((20 + 20 + 6) * S + shop_w + here_w), int(btn_h), BLACK)
