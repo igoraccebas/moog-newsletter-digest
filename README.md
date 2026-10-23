@@ -157,7 +157,7 @@ homepage banner sent to the Moog banner scheduling app, after the Klaviyo draft 
   ÉCONOMISEZ / MAGASINEZ ICI; headline and sub-line from the French product title, read from the public storefront
   (`/fr/products/<handle>.json`; Shopify returns the English title when there is no translation). Alt text EN + FR.
 - Submitted **without a booking**: a human approves it and picks the slot and dates in the app. The API requires a
-  slot, so items are filed under env `MOOG_BANNERS_SLOT` if set, else `WEB_BANNER_SLOT` (homepage-grid-3) when the app has it, else the app's first active homepage slot (printed in the run log). Link: the product by handle (localises EN/FR);
+  slot, so items are filed under env `MOOG_BANNERS_SLOT` if set, else `WEB_BANNER_SLOT` (homepage-grid-3) when the app has it, else the app's first active homepage slot, or a draft one when none is active (printed in the run log). Live app 2026-10-23: `homepage-grid-2` (draft). Cloud test 2026-10-23 17:38 UTC: 5 of 5 sent (routine "TEST · Website banners", trig_01UFweBjBs4AzU7EuAHjTMeU, disabled, run by hand). Link: the product by handle (localises EN/FR);
   if the app's store cannot find it, the plain product URL.
 - API: `BANNER_APP_API` in digest.py, `Authorization: Bearer $MOOG_BANNERS_API_KEY` (cloud environment secret).
   POST /uploads → PUT each JPEG to the signed storage.googleapis.com URL → POST /banners. Idempotency-Keys come from
