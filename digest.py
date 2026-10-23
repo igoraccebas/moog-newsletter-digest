@@ -1561,19 +1561,19 @@ def banner_app_call(method, path, body, key, idempotency_key=None):
 
 def pick_banner_slot(key):
     """slotKey for submissions: MOOG_BANNERS_SLOT, else WEB_BANNER_SLOT if the app lists it, else the first active
-    slot whose key or name mentions 'homepage', else the first active slot. The slot only files the item; the
-    reviewer chooses where it actually goes."""
+    slot whose key or name mentions 'homepage', else the first active slot; when no slot is active yet (a new
+    slot starts as draft), the same choice among all listed slots. The slot only files the item (no booking);
+    the reviewer chooses where it actually goes."""
     if os.environ.get("MOOG_BANNERS_SLOT"):
         return os.environ["MOOG_BANNERS_SLOT"]
     listed = banner_app_call("GET", "slots", None, key).get("slots", [])
-    slots = [x for x in listed if str(x.get("status", "active")).lower() == "active"]
+    slots = [x for x in listed if str(x.get("status", "active")).lower() == "active"] or listed
     keys = [x["key"] for x in slots]
     if WEB_BANNER_SLOT in keys:
         return WEB_BANNER_SLOT
     home = [x["key"] for x in slots if "homepage" in (x["key"] + " " + x.get("name", "")).lower()]
     if not (home or keys):
-        raise RuntimeError("banner app lists no active slot (it returned: "
-                           + (", ".join(f"{x.get('key')} [{x.get('status')}]" for x in listed) or "no slots at all") + ")")
+        raise RuntimeError("banner app lists no slot at all")
     print(f"  note: banner app slots: {', '.join(keys)}; filing banners under {(home or keys)[0]}")
     return (home or keys)[0]
 
