@@ -143,6 +143,33 @@ Run by hand: `python3 digest.py sale --from-json out/sale.json --extras out/extr
 `out/sale-<date>-<n>-<slug>.png` per deal. Every card carries `discount_pct` (also in the other modes, null when
 there is no compare-at), and in sale mode `headline`, `subline`, `banner`.
 
+## Website banners — banner scheduling app (all three e-mails, since 2026-10-23)
+
+Every product that goes out in an e-mail — picks (hero and the rest), the launch product, every deal — also gets a
+homepage banner sent to the Moog banner scheduling app, after the Klaviyo draft is created:
+
+- Design claude.ai/design "Homepage Banner" **2A** for new products (picks, launch) and **3A** for deals: 2000×1000
+  JPEG (2:1, the app's recommended size; JPEG/WebP under 1 MB only, so `banner.py` has its own JPEG encoder), **no
+  price** (Igor). Left column: brand logo, "NEW RELEASE" / red "ON SALE" flag, headline (brand dropped when the logo
+  shows it, as in the design), sub-line, SHOP HERE. Right: the product cut-out; deals add the red SAVE NN% disc.
+  Colourways rotate like the e-mail banners.
+- **One English and one French image per product**, one pending item in the app. French copy: NOUVEAUTÉ / EN SOLDE /
+  ÉCONOMISEZ / MAGASINEZ ICI; headline and sub-line from the French product title, read from the public storefront
+  (`/fr/products/<handle>.json`; Shopify returns the English title when there is no translation). Alt text EN + FR.
+- Submitted **without a booking**: a human approves it and picks the slot and dates in the app. The API requires a
+  slot, so items are filed under `WEB_BANNER_SLOT` (homepage-grid-3). Link: the product by handle (localises EN/FR);
+  if the app's store cannot find it, the plain product URL.
+- API: `BANNER_APP_API` in digest.py, `Authorization: Bearer $MOOG_BANNERS_API_KEY` (cloud environment secret).
+  POST /uploads → PUT each JPEG to the signed storage.googleapis.com URL → POST /banners. Idempotency-Keys come from
+  `moog-digest:<mode>:<date>:<product id>`, so a re-run the same day never duplicates a banner. 429/5xx are retried
+  (the app allows 60 requests per minute per key).
+- Only with `--publish`. **Never fails the run**: the e-mail draft already exists, so a problem (no key, egress
+  blocked, app down) prints `WARNING: website banner N … not sent: …` and is recorded in the manifest.
+- Manifest `web_banners[]`: product_id, design, gradient, headline {en, fr}, files {en, fr} (local out/ names),
+  submitted, banner_id, status ("library" = waiting in the app, no booking), link, error.
+- Network: the cloud environment must allow `banner-scheduler--moog-banner-scheduler.us-east4.hosted.app` and
+  `storage.googleapis.com` (uploads), besides moogaudio.com / cdn.shopify.com already used by the e-mail banners.
+
 ## Departments & schedule
 
 | key     | Shopify collection            | digest day |

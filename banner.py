@@ -1,7 +1,9 @@
 """
-Moog Audio - e-mail banner renderer (design "Homepage Banner", claude.ai/design): 4B "On sale" for the Deals
-e-mail (Igor 2026-09-17), 4A "New release" for the Tuesday/Friday picks (Igor 2026-10-23). Same frame and backdrop;
-4A has an eyebrow line above the headline and no price or discount disc.
+Moog Audio - banner renderer (design "Homepage Banner", claude.ai/design).
+E-mail, 900x675 PNG: 4B "On sale" for the Deals e-mail (Igor 2026-09-17), 4A "New release" for the Tuesday/Friday
+picks (Igor 2026-10-23). Same frame and backdrop; 4A has an eyebrow line above the headline and no price or disc.
+Website, 2000x1000 JPEG for the banner scheduling app (Igor 2026-10-23): 2A "New release" for every new product
+(picks and launch), 3A "On sale" for every deal, one English and one French image each, no price.
 
 Pure standard library, imported by digest.py (the entry point stays `python3 digest.py sale ...`). Everything
 that touches pixels lives here so digest.py stays the pipeline:
@@ -10,7 +12,9 @@ that touches pixels lives here so digest.py stays the pipeline:
   compositing                 key_white / as_white_mask / bbox_alpha / crop / blit / fill_rect / draw_disc
   backgrounds                 linear_gradient / radial_wash / build_background
   text                        Font (TrueType: cmap 4, loca/glyf, hmtx) / draw_text / text_width
-  the banner                  build_banner(card, headline, subline, background, fonts, logo_cache, eyebrow=None)
+  JPEG encoder                encode_jpeg (website banners: the banner app takes JPEG/WebP only)
+  the e-mail banner           build_banner(card, headline, subline, background, fonts, logo_cache, eyebrow=None)
+  the website banner          fetch_web_assets + build_web_banner (2A new release / 3A on sale, EN and FR, no price)
 
 Pure Python is slow per pixel: the 900x675 background takes ~2 s and is built ONCE per run; each banner then
 costs a few seconds (CDN fetches + PNG decode + text). Fonts: assets/fonts/Helvetica.ttf is required
@@ -189,6 +193,161 @@ def encode_png(w, h, rows, opaque=True):
         body, ctype = b"".join(b"\x00" + bytes(r) for r in rows), 6
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, ctype, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(body, 9)) + chunk(b"IEND", b""))
+
+
+# --------------------------------------------------------------------------------------------- JPEG codec ----
+# The banner app (website banners) accepts only JPEG/WebP. Baseline JPEG, 4:2:0, the standard ITU-T T.81
+# Annex K tables, float AAN forward DCT (as IJG jfdctflt). Encode only.
+_ZIGZAG = (0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+           35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63)
+_Q_LUMA = (16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22, 29, 51, 87, 80, 62,
+           18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99)
+_Q_CHROMA = (17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99) + (99,) * 32
+_DC_LUMA = ((0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0), tuple(range(12)))
+_DC_CHROMA = ((0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0), tuple(range(12)))
+_AC_LUMA = ((0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d), bytes.fromhex(
+    "01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a"
+    "434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aa"
+    "b2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9fa"))
+_AC_CHROMA = ((0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77), bytes.fromhex(
+    "000102031104052131061241510761711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a35363738393a"
+    "434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aa"
+    "b2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa"))
+_AAN = [1.0] + [math.cos(k * math.pi / 16) * math.sqrt(2) for k in range(1, 8)]
+
+
+def _huff_codes(spec):
+    bits, vals = spec
+    assert sum(bits) == len(vals)
+    codes, code, k = {}, 0, 0
+    for length in range(1, 17):
+        for _ in range(bits[length - 1]):
+            codes[vals[k]] = (code, length)
+            code += 1
+            k += 1
+        code <<= 1
+    return codes
+
+
+def _fdct_quant(blk, fdtbl):
+    """In-place float AAN DCT of 64 level-shifted samples (rows then columns), then quantisation.
+    Returns the 64 quantised coefficients in natural order."""
+    for i in range(0, 64, 8):
+        d0, d1, d2, d3, d4, d5, d6, d7 = blk[i:i + 8]
+        t0, t7, t1, t6, t2, t5, t3, t4 = d0 + d7, d0 - d7, d1 + d6, d1 - d6, d2 + d5, d2 - d5, d3 + d4, d3 - d4
+        t10, t13, t11, t12 = t0 + t3, t0 - t3, t1 + t2, t1 - t2
+        z1 = (t12 + t13) * 0.707106781
+        t10b, t11b, t12b = t4 + t5, t5 + t6, t6 + t7
+        z5 = (t10b - t12b) * 0.382683433
+        z2, z4, z3 = 0.541196100 * t10b + z5, 1.306562965 * t12b + z5, t11b * 0.707106781
+        z11, z13 = t7 + z3, t7 - z3
+        blk[i:i + 8] = (t10 + t11, z11 + z4, t13 + z1, z13 - z2, t10 - t11, z13 + z2, t13 - z1, z11 - z4)
+    for i in range(8):
+        d0, d1, d2, d3, d4, d5, d6, d7 = blk[i], blk[i + 8], blk[i + 16], blk[i + 24], blk[i + 32], blk[i + 40], blk[i + 48], blk[i + 56]
+        t0, t7, t1, t6, t2, t5, t3, t4 = d0 + d7, d0 - d7, d1 + d6, d1 - d6, d2 + d5, d2 - d5, d3 + d4, d3 - d4
+        t10, t13, t11, t12 = t0 + t3, t0 - t3, t1 + t2, t1 - t2
+        z1 = (t12 + t13) * 0.707106781
+        t10b, t11b, t12b = t4 + t5, t5 + t6, t6 + t7
+        z5 = (t10b - t12b) * 0.382683433
+        z2, z4, z3 = 0.541196100 * t10b + z5, 1.306562965 * t12b + z5, t11b * 0.707106781
+        z11, z13 = t7 + z3, t7 - z3
+        blk[i], blk[i + 8], blk[i + 16], blk[i + 24] = t10 + t11, z11 + z4, t13 + z1, z13 - z2
+        blk[i + 32], blk[i + 40], blk[i + 48], blk[i + 56] = t10 - t11, z13 + z2, t13 - z1, z11 - z4
+    return [round(v * q) for v, q in zip(blk, fdtbl)]
+
+
+def encode_jpeg(w, h, rows, quality=88):
+    """RGBA rows -> baseline JPEG bytes (alpha ignored), 4:2:0 chroma subsampling."""
+    scale = 5000 / quality if quality < 50 else 200 - 2 * quality
+    qtabs = [[min(255, max(1, (q * scale + 50) // 100)) for q in base] for base in (_Q_LUMA, _Q_CHROMA)]
+    fdtbls = [[1.0 / (qt[k] * _AAN[k >> 3] * _AAN[k & 7] * 8) for k in range(64)] for qt in qtabs]
+    hufs = [(_huff_codes(_DC_LUMA), _huff_codes(_AC_LUMA)), (_huff_codes(_DC_CHROMA), _huff_codes(_AC_CHROMA))]
+    pw, ph = (w + 15) // 16 * 16, (h + 15) // 16 * 16
+    # colour planes (level-shifted), padded to whole MCUs by edge replication
+    Y, Cb, Cr = [], [], []
+    for y in range(ph):
+        row = rows[min(y, h - 1)]
+        yl, cbl, crl = [0.0] * pw, [0.0] * pw, [0.0] * pw
+        for x in range(pw):
+            i = 4 * min(x, w - 1)
+            r, g, b = row[i], row[i + 1], row[i + 2]
+            yl[x] = 0.299 * r + 0.587 * g + 0.114 * b - 128
+            cbl[x] = -0.168736 * r - 0.331264 * g + 0.5 * b
+            crl[x] = 0.5 * r - 0.418688 * g - 0.081312 * b
+        Y.append(yl); Cb.append(cbl); Cr.append(crl)
+    # 2x2 chroma averages
+    cw, ch = pw // 2, ph // 2
+    def sub(plane):
+        out = []
+        for y in range(ch):
+            a, b = plane[2 * y], plane[2 * y + 1]
+            out.append([(a[2 * x] + a[2 * x + 1] + b[2 * x] + b[2 * x + 1]) * 0.25 for x in range(cw)])
+        return out
+    Cb, Cr = sub(Cb), sub(Cr)
+
+    out = bytearray()
+    acc, nbits = 0, 0
+    def put(code, length):
+        nonlocal acc, nbits
+        acc = (acc << length) | code
+        nbits += length
+        while nbits >= 8:
+            nbits -= 8
+            byte = (acc >> nbits) & 255
+            out.append(byte)
+            if byte == 255:
+                out.append(0)
+        acc &= (1 << nbits) - 1
+
+    def block(plane, bx, by, comp, prev_dc):
+        blk = []
+        for yy in range(by, by + 8):
+            blk.extend(plane[yy][bx:bx + 8])
+        coef = _fdct_quant(blk, fdtbls[comp])
+        dc_codes, ac_codes = hufs[comp]
+        diff = coef[0] - prev_dc
+        cat = abs(diff).bit_length()
+        put(*dc_codes[cat])
+        if cat:
+            put(diff if diff > 0 else diff + (1 << cat) - 1, cat)
+        run = 0
+        for k in range(1, 64):
+            v = coef[_ZIGZAG[k]]
+            if not v:
+                run += 1
+                continue
+            while run > 15:
+                put(*ac_codes[0xF0])
+                run -= 16
+            cat = abs(v).bit_length()
+            put(*ac_codes[(run << 4) | cat])
+            put(v if v > 0 else v + (1 << cat) - 1, cat)
+            run = 0
+        if run:
+            put(*ac_codes[0x00])
+        return coef[0]
+
+    dc = [0, 0, 0]
+    for my in range(0, ph, 16):
+        for mx in range(0, pw, 16):
+            for oy, ox in ((0, 0), (0, 8), (8, 0), (8, 8)):
+                dc[0] = block(Y, mx + ox, my + oy, 0, dc[0])
+            dc[1] = block(Cb, mx // 2, my // 2, 1, dc[1])
+            dc[2] = block(Cr, mx // 2, my // 2, 1, dc[2])
+    if nbits:
+        put((1 << (8 - nbits)) - 1, 8 - nbits)            # pad the last byte with 1-bits
+
+    def seg(marker, payload):
+        return b"\xff" + bytes([marker]) + struct.pack(">H", len(payload) + 2) + payload
+    def dht(cls_id, spec):
+        bits, vals = spec
+        return bytes([cls_id]) + bytes(bits) + bytes(vals)
+    head = (b"\xff\xd8" + seg(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00")
+            + seg(0xDB, b"\x00" + bytes(qtabs[0][_ZIGZAG[k]] for k in range(64)) + b"\x01" + bytes(qtabs[1][_ZIGZAG[k]] for k in range(64)))
+            + seg(0xC0, struct.pack(">BHHB", 8, h, w, 3) + b"\x01\x22\x00\x02\x11\x01\x03\x11\x01")
+            + seg(0xC4, dht(0x00, _DC_LUMA) + dht(0x10, _AC_LUMA) + dht(0x01, _DC_CHROMA) + dht(0x11, _AC_CHROMA))
+            + seg(0xDA, b"\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00"))
+    return head + bytes(out) + b"\xff\xd9"
 
 
 # -------------------------------------------------------------------------------------------- compositing ----
@@ -402,26 +561,38 @@ def radial_wash(cv, w, h, fx, fy, rx, ry, alpha0, rgb=WHITE):
                     row[4 * x + c] = (rgb[c] * a + row[4 * x + c] * (255 - a)) // 255
 
 
-def build_background(name="indigo"):
-    """Design 4B backdrop in one of the GRADIENTS colourways: gradient (+ colour pools for the coral mesh)
-    + radial white wash + masked dot grid + skewed sheen + bottom hairline. The grain overlay of the design
-    is left out on purpose: it makes the PNG ten times larger."""
+# Where the white wash and the dot grid sit: 4A/4B centre them at 70%/62% (dots 70%/60%, mask 65% x 70%);
+# 2A/3A move them right, behind the product (wash 78%/60%, dots 78%/55%, mask 60% x 80%).
+FOCUS_4 = {"wash": (0.70, 0.62), "dots": (0.70, 0.60, 0.65, 0.70)}
+FOCUS_2 = {"wash": (0.78, 0.60), "dots": (0.78, 0.55, 0.60, 0.80)}
+
+
+def build_background(name="indigo", W=W, H=H, focus=FOCUS_4, scale=1.0):
+    """Design 4A/4B (default) or 2A/3A (W, H = WEB_W, WEB_H, focus=FOCUS_2, scale=WEB_SCALE) backdrop in one of
+    the GRADIENTS colourways: gradient (+ colour pools for the coral mesh) + radial white wash + masked dot grid
+    + skewed sheen + bottom hairline. scale multiplies the design's pixel sizes (dot pitch, hairline). The grain
+    overlay of the design is left out on purpose: it makes the PNG ten times larger."""
     g = GRADIENTS[name]
     cv = linear_gradient(W, H, g["angle"], [(p, hex_rgb(c)) for p, c in g["stops"]])
     for fx, fy, r, colour in g.get("pools", []):             # radial-gradient(circle at fx fy, colour 0%, transparent r)
         radial_wash(cv, W, H, fx * W, fy * H, r * W, r * W, 1.0, hex_rgb(colour))
-    radial_wash(cv, W, H, 0.70 * W, 0.62 * H, 0.55 * W, 0.55 * H, 0.22)
-    # dot grid: 1px white dots every 14px at .55, masked by an ellipse 65% x 70% at 70%/60% (.9 -> .35 at 45% -> 0 at 75%), layer opacity .5
-    mx, my, mrx, mry = 0.70 * W, 0.60 * H, 0.65 * W, 0.70 * H
-    for y in range(7, H, 14):
-        row = cv[y]
-        for x in range(7, W, 14):
+    wx, wy = focus["wash"]
+    radial_wash(cv, W, H, wx * W, wy * H, 0.55 * W, 0.55 * H, 0.22)
+    # dot grid: 1px white dots every 14px at .55, masked by an ellipse (.9 -> .35 at 45% -> 0 at 75%), layer opacity .5
+    dx_, dy_, drx, dry = focus["dots"]
+    mx, my, mrx, mry = dx_ * W, dy_ * H, drx * W, dry * H
+    pitch = max(1, round(14 * scale))
+    dot = max(1, round(scale))                               # dot size in pixels
+    for y in range(pitch // 2, H, pitch):
+        for x in range(pitch // 2, W, pitch):
             md = math.hypot((x - mx) / mrx, (y - my) / mry)
             mask = 0.9 - 0.55 * md / 0.45 if md <= 0.45 else (0.35 * (1 - (md - 0.45) / 0.30) if md <= 0.75 else 0.0)
             a = int(0.55 * 0.5 * mask * 255)
             if a > 0:
-                for c in range(3):
-                    row[4 * x + c] = (255 * a + row[4 * x + c] * (255 - a)) // 255
+                for dot_row in cv[y:y + dot]:
+                    for xx in range(x, min(W, x + dot)):
+                        for c in range(3):
+                            dot_row[4 * xx + c] = (255 * a + dot_row[4 * xx + c] * (255 - a)) // 255
     # skewed sheen: a soft diagonal band, white .10 at its centre line
     tan14 = math.tan(math.radians(14))
     for y in range(H):
@@ -433,10 +604,10 @@ def build_background(name="indigo"):
                 if a:
                     for c in range(3):
                         row[4 * x + c] = (255 * a + row[4 * x + c] * (255 - a)) // 255
-    last = cv[-1]
-    for x in range(W):
-        for c in range(3):
-            last[4 * x + c] = int(255 * 0.35 + last[4 * x + c] * 0.65)
+    for last in cv[H - max(1, round(scale)):]:
+        for x in range(W):
+            for c in range(3):
+                last[4 * x + c] = int(255 * 0.35 + last[4 * x + c] * 0.65)
     return cv
 
 
@@ -825,13 +996,18 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     return crop(rows, (max(0, x0), max(0, y0), min(w, x1), min(h, y1)))
 
 
-def fetch_logo(vendor, cache):
+def fetch_logo(vendor, cache, scale_box=None):
     """White silhouette of the brand-collection logo (Shopify collection image, keyed and filled white),
-    trimmed and fitted to the logo box. None when the brand has no collection or no image."""
-    if vendor in cache:
-        return cache[vendor]
-    result = None
+    trimmed and fitted to the logo box (the e-mail's 240x56, or scale_box=(w, h) for the website layout; a
+    LOGO_SIZE_OVERRIDES vendor gets the same proportional enlargement in both). None when the brand has no
+    collection or no image."""
     box_w, box_h = LOGO_SIZE_OVERRIDES.get(vendor, (LOGO_W, LOGO_H))
+    if scale_box:
+        box_w, box_h = round(scale_box[0] * box_w / LOGO_W), round(scale_box[1] * box_h / LOGO_H)
+    key = (vendor, box_w, box_h)
+    if key in cache:
+        return cache[key]
+    result = None
     try:
         data = json.loads(fetch(f"{STORE}/collections/{vendor_handle(vendor)}.json", timeout=20))
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
@@ -844,7 +1020,7 @@ def fetch_logo(vendor, cache):
         print(f"  note: no logo for {vendor} ({type(e).__name__}: {str(e)[:60]}); using the vendor name")
     except Exception as e:
         raise BannerError(f"logo for {vendor} could not be fetched ({type(e).__name__}: {str(e)[:80]})") from e
-    cache[vendor] = result
+    cache[key] = result
     return result
 
 
@@ -955,3 +1131,137 @@ def build_banner(card, headline, subline, background, fonts, logo_cache, eyebrow
     draw_text(cv, W, H, regular, "HERE", btn_size, bx + 20 + shop_w + 6, base, WHITE, tracking=0.08)
 
     return encode_png(W, H, cv), time.perf_counter() - t0
+
+
+# ----------------------------------------------------------------------------------------- website banner ----
+# Design 2A (new release) / 3A (on sale) at 1024x512, rendered at 2000x1000 (the banner app's recommended size,
+# 2:1, JPEG under 1 MB). Left column 44%: logo 200x48, eyebrow (2A) or red ON SALE flag (3A), headline 52px,
+# sub-line 19px, SHOP HERE. Right column 56%: the product in an 872:581 box, 56px from the right edge; 3A adds a
+# red SAVE NN% disc top right. No price on website banners (Igor, 2026-10-23); 3A's "Ends <date>" is left out
+# (Shopify has no sale end date).
+WEB_W, WEB_H = 2000, 1000
+WEB_SCALE = WEB_W / 1024
+WEB_MAX_BYTES = 1_000_000
+WEB_COPY = {
+    "en": {"new": "New release", "sale": "On sale", "save": "Save", "shop": ("Shop", "Here")},
+    "fr": {"new": "Nouveauté", "sale": "En solde", "save": "Économisez", "shop": ("Magasinez", "ici")},
+}
+
+
+def _web_product_box():
+    s = WEB_SCALE
+    bw = (1024 * 0.56 - 56) * s
+    return int(1024 * 0.44 * s), int((WEB_H - bw * 581 / 872) / 2), int(bw), int(bw * 581 / 872)
+
+
+def fetch_web_assets(card, logo_cache):
+    """Logo and product cut-out at website scale, fetched once and shared by the EN and FR images.
+    Raises BannerError like build_banner when the product photo cannot be fetched."""
+    logo = fetch_logo(card["vendor"], logo_cache, scale_box=(round(200 * WEB_SCALE), round(48 * WEB_SCALE)))
+    _, _, bw, bh = _web_product_box()
+    try:
+        cut = fetch_product_cutout(card["image"], bw, bh)
+    except Exception as e:
+        raise BannerError(f"product image for {card['title'][:50]} could not be fetched ({type(e).__name__}: {str(e)[:80]})") from e
+    if not cut:
+        raise BannerError(f"product image for {card['title'][:50]} is empty after removing its white background")
+    return logo, cut
+
+
+def _fit_lines(face, text, sizes, max_w, tracking, max_lines):
+    """First size at which text wraps into max_lines or fewer lines that all fit; else the last size, trimmed."""
+    for size in sizes:
+        lines = wrap_words(face, text, size, max_w, tracking)
+        if len(lines) <= max_lines and all(text_width(face, l, size, tracking) <= max_w for l in lines):
+            return lines, size
+    size = sizes[-1]
+    lines = wrap_words(face, text, size, max_w, tracking)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        while text_width(face, lines[-1] + "…", size, tracking) > max_w and " " in lines[-1]:
+            lines[-1] = lines[-1].rsplit(" ", 1)[0]
+        lines[-1] = lines[-1].rstrip(",;:-") + "…"
+    return lines, size
+
+
+def build_web_banner(card, headline, subline, background, fonts, assets, locale="en", sale=False):
+    """One website banner (2A, or 3A when sale=True) in one locale. assets = fetch_web_assets(card, ...).
+    Returns (jpeg_bytes, seconds)."""
+    t0 = time.perf_counter()
+    S, copy = WEB_SCALE, WEB_COPY[locale]
+    cv = [bytearray(r) for r in background]
+    bold, regular = fonts.face(True), fonts.face(False)
+    emb = fonts.embolden(True)
+    logo, cut = assets
+    col_x, col_w = 56 * S, (1024 * 0.44 - 56 - 24) * S
+    vendor = card["vendor"]
+    if logo and headline.lower().startswith(vendor.lower() + " "):
+        headline = headline[len(vendor):].strip()          # the logo already names the brand (design: "PRIME 4 G2")
+
+    # ---- measure the left column stack, centred vertically
+    lines, hsize = _fit_lines(bold, headline.upper(), (52 * S, 44 * S, 38 * S), col_w, -0.025, 3)
+    if hsize == 52 * S and len(lines) > 2:
+        lines, hsize = _fit_lines(bold, headline.upper(), (44 * S, 38 * S), col_w, -0.025, 3)
+    sub_lines, sub_size = _fit_lines(regular, subline, (19 * S,), col_w, 0, 2) if subline else ([], 19 * S)
+    logo_h = logo[1] if logo else 48 * S
+    logo_box_h = max(48 * S, logo_h)
+    label_size = 12 * S
+    label_h = (label_size + 10 * S) if sale else label_size * 1.15
+    btn_size, btn_h = 16 * S, (13 + 16 + 13) * S
+    stack_h = (logo_box_h + 20 * S + label_h + 10 * S + len(lines) * hsize * 0.98
+               + (10 * S + len(sub_lines) * sub_size * 1.3 if sub_lines else 0) + 24 * S + btn_h)
+    y = (WEB_H - stack_h) / 2
+
+    # ---- right column: product, then (3A) the SAVE disc over its top-right
+    bx, by, bw, bh = _web_product_box()
+    pw, ph, prow = cut
+    blit(cv, WEB_W, WEB_H, pw, ph, prow, bx + (bw - pw) // 2, by + (bh - ph) // 2)
+    if sale and card.get("discount_pct"):
+        r = 66 * S
+        dcx, dcy = (1024 - 56) * S - r, 48 * S + r
+        draw_disc(cv, WEB_W, WEB_H, dcx, dcy, r, RED)
+        top = dcy - (13 + 4 + 46 + 4) * S / 2
+        draw_text(cv, WEB_W, WEB_H, regular, copy["save"].upper(), 13 * S, dcx, top + 13 * S * 0.8, WHITE, tracking=0.08, align="center")
+        draw_text(cv, WEB_W, WEB_H, bold, f"{card['discount_pct']}%", 46 * S, dcx, top + (13 + 4) * S + 46 * S * 0.8, WHITE,
+                  tracking=-0.03, align="center", embolden=emb)
+
+    # ---- left column
+    if logo:
+        lw, lh, lrows = logo
+        blit(cv, WEB_W, WEB_H, lw, lh, lrows, int(col_x), int(y + (logo_box_h - lh) / 2))
+    else:
+        name, size = card["vendor"].upper(), 28 * S
+        while size > 16 * S and text_width(bold, name, size, 0.04) > 200 * S:
+            size -= 2 * S
+        draw_text(cv, WEB_W, WEB_H, bold, name, size, col_x, y + logo_box_h / 2 + size * 0.36, WHITE, tracking=0.04, embolden=emb)
+    y += logo_box_h + 20 * S
+    if sale:
+        text = copy["sale"].upper()
+        tw = text_width(bold, text, label_size, 0.14)
+        fill_rect(cv, WEB_W, WEB_H, int(col_x), int(y), int(tw + 16 * S), int(label_h), RED)
+        draw_text(cv, WEB_W, WEB_H, bold, text, label_size, col_x + 8 * S, y + 5 * S + label_size * 0.8, WHITE, tracking=0.14, embolden=emb)
+    else:
+        draw_text(cv, WEB_W, WEB_H, bold, copy["new"].upper(), label_size, col_x, y + label_size * 0.88, WHITE, tracking=0.14,
+                  embolden=emb, opacity=0.9)
+    y += label_h + 10 * S
+    for line in lines:
+        draw_text(cv, WEB_W, WEB_H, bold, line, hsize, col_x, y + hsize * 0.78, WHITE, tracking=-0.025, embolden=emb)
+        y += hsize * 0.98
+    if sub_lines:
+        y += 10 * S
+        for line in sub_lines:
+            draw_text(cv, WEB_W, WEB_H, regular, line, sub_size, col_x, y + sub_size * 0.95, WHITE)
+            y += sub_size * 1.3
+    y += 24 * S
+    shop, here = copy["shop"]
+    shop_w, here_w = text_width(bold, shop.upper(), btn_size, 0.08), text_width(regular, here.upper(), btn_size, 0.08)
+    fill_rect(cv, WEB_W, WEB_H, int(col_x), int(y), int((20 + 20 + 6) * S + shop_w + here_w), int(btn_h), BLACK)
+    base = y + 13 * S + btn_size * 0.8
+    draw_text(cv, WEB_W, WEB_H, bold, shop.upper(), btn_size, col_x + 20 * S, base, WHITE, tracking=0.08, embolden=emb)
+    draw_text(cv, WEB_W, WEB_H, regular, here.upper(), btn_size, col_x + 20 * S + shop_w + 6 * S, base, WHITE, tracking=0.08)
+
+    for quality in (88, 80, 72, 64):                      # the app refuses files over 1 MB
+        jpeg = encode_jpeg(WEB_W, WEB_H, cv, quality)
+        if len(jpeg) <= WEB_MAX_BYTES:
+            break
+    return jpeg, time.perf_counter() - t0

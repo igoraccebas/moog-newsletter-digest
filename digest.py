@@ -16,9 +16,9 @@ Usage:
   python3 digest.py hot   --from-json out/hot.json    --extras out/extras.json --publish   # product launch (hourly)
   python3 digest.py sale  --from-json out/sale.json   --extras out/extras.json --publish   # deals (hourly)
 """
-import argparse, datetime as dt, hashlib, html, json, os, re, struct, sys, urllib.error, urllib.request, zlib
+import argparse, datetime as dt, hashlib, html, json, os, re, struct, sys, time, urllib.error, urllib.request, zlib
 from pathlib import Path
-import banner            # Deals banner renderer (design 4B): stdlib PNG/text toolkit in a sibling file, cloned with the repo
+import banner            # banner renderer (e-mail 4A/4B PNG, website 2A/3A JPEG): stdlib toolkit in a sibling file, cloned with the repo
 
 STORE = "https://moogaudio.com"
 KL_IMG = "https://d3k81ch9hvuctc.cloudfront.net/company/R2MsVA/images/"
@@ -48,6 +48,12 @@ AFFIRM_LEGAL = ("*Payment options through Affirm Canada Holdings Ltd. (\u201cAff
     "2 weeks. For more information, please see https://www.affirm.com/en-ca/how-it-works.")
 PREVIEW_SUFFIX = "FREE SHIPPING on most orders over 199$"
 # Klaviyo publish settings (drafts only — this script never creates a send job)
+# Website banners (since 2026-10-23): every product of every e-mail (picks, launch, deals) also gets a design-2A
+# (new) or 3A (deal) homepage banner, EN + FR, submitted to the Moog banner scheduling app as a PENDING item with
+# no booking: a human approves it and picks the slot/position in the app. The API needs a slotKey, so items are
+# filed under WEB_BANNER_SLOT. Key: env MOOG_BANNERS_API_KEY (Authorization: Bearer mbs_...).
+BANNER_APP_API = "https://banner-scheduler--moog-banner-scheduler.us-east4.hosted.app/api/v1/"
+WEB_BANNER_SLOT = "homepage-grid-3"
 KLAVIYO_API = "https://a.klaviyo.com/api/"
 KLAVIYO_REVISION = "2024-10-15"
 AUDIENCES = ["R5ggT7", "RmQMN3"]          # Newsletter Moog Audio + Website Form Newsletter List
@@ -1520,6 +1526,120 @@ def klaviyo_step(a, json_path, html_path):
     return 0
 
 
+def fetch_fr_title(url):
+    """French title and product type from the public French storefront (/fr/products/<handle>.json); (None, None)
+    when the page is missing (unpublished product) or unreachable. Shopify serves the English text when a product
+    has no French translation, so the result is always usable."""
+    handle = url.rstrip("/").rsplit("/", 1)[-1]
+    try:
+        p = json.loads(banner.fetch(f"{STORE}/fr/products/{handle}.json", timeout=20, attempts=2))["product"]
+        return p.get("title"), p.get("product_type")
+    except Exception as e:
+        print(f"  note: no French title for {handle} ({type(e).__name__}); the FR banner uses the English one")
+        return None, None
+
+
+def banner_app_call(method, path, body, key, idempotency_key):
+    req = urllib.request.Request(BANNER_APP_API + path, method=method, data=json.dumps(body).encode(), headers={
+        "Authorization": f"Bearer {key}", "content-type": "application/json", "accept": "application/json",
+        "Idempotency-Key": idempotency_key, "User-Agent": banner.USER_AGENT})
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:500]
+            if (e.code == 429 or e.code >= 500) and attempt < 3:   # the app allows 60 requests per minute per key
+                wait = e.headers.get("Retry-After", "")
+                time.sleep(min(float(wait), 60) if wait.replace(".", "", 1).isdigit() else 20 * (attempt + 1))
+                continue
+            raise RuntimeError(f"banner app {method} {path}: HTTP {e.code} {detail}") from e
+
+
+def submit_web_banner(jpegs, alt, link, name, ref, key):
+    """Upload the EN + FR JPEGs (signed PUT URLs from POST /uploads) and create ONE pending banner without a
+    booking. The Idempotency-Keys derive from ref, so a re-run for the same product and day cannot create a
+    duplicate. Returns the app's response (bannerId, status...)."""
+    locales = sorted(jpegs)
+    files = [{"filename": f"{ref.replace(':', '-')}-{loc}.jpg", "mimeType": "image/jpeg", "bytes": len(jpegs[loc])} for loc in locales]
+    ups = banner_app_call("POST", "uploads", {"files": files}, key, f"{ref}:uploads")["uploads"]
+    for loc, up in zip(locales, ups):
+        req = urllib.request.Request(up["uploadUrl"], data=jpegs[loc], method=up.get("method", "PUT"), headers=up.get("headers") or {})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            r.read()
+    body = {"slotKey": WEB_BANNER_SLOT, "internalName": name, "sourceRef": ref, "alt": alt, "link": link,
+            "files": {"desktop": {loc: up["uploadId"] for loc, up in zip(locales, ups)}}}
+    return banner_app_call("POST", "banners", body, key, f"{ref}:banner")
+
+
+def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, submit=None, name_prefix=""):
+    """Website banners for every card: design 3A (sale=True, deals) or 2A (new products), in English and French,
+    2000x1000 JPEG, no price. Rendered to out/<prefix>-<stamp>-<n>-<slug>-web-<en|fr>.jpg; with --publish and
+    MOOG_BANNERS_API_KEY each pair is submitted to the banner app (pending, no booking). Never fails the run: the
+    e-mail draft already exists when this runs, so problems are printed as WARNING lines and recorded per banner.
+    Writes manifest web_banners[] when json_path is given and returns that list."""
+    submit = a.publish if submit is None else submit
+    key = os.environ.get("MOOG_BANNERS_API_KEY")
+    if submit and not key:
+        print("WARNING: website banners rendered but NOT sent to the banner app: MOOG_BANNERS_API_KEY is not set.")
+    fonts = banner.load_fonts(a.font_dir)
+    backdrops, logo_cache, out = {}, {}, []
+    kind = ("On sale", "En solde") if sale else ("New release", "Nouveauté")
+    for i, c in enumerate(featured, 1):
+        gradient = banner.GRADIENT_ORDER[(i - 1) % len(banner.GRADIENT_ORDER)]
+        h1, sub = split_title(c["title"], c["vendor"], c.get("type") or "")
+        fr_title, fr_type = fetch_fr_title(c["url"])
+        if fr_title and c.get("variants"):
+            fr_title = re.split(r"\s+[-–]\s+", fr_title)[0]      # colour family: same stem rule as the card title
+        fr_h1, fr_sub = split_title(fr_title, c["vendor"], fr_type or c.get("type") or "") if fr_title else (h1, sub)
+        slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
+        pid = (c.get("ids") or [slug])[0]
+        entry = {"product_id": (c.get("admin_ids") or [None])[0], "title": c["title"], "design": "3A" if sale else "2A",
+                 "gradient": gradient, "headline": {"en": h1, "fr": fr_h1}, "files": {}, "submitted": False}
+        out.append(entry)
+        try:
+            if gradient not in backdrops:
+                backdrops[gradient] = banner.build_background(gradient, banner.WEB_W, banner.WEB_H, banner.FOCUS_2, banner.WEB_SCALE)
+            assets = banner.fetch_web_assets(c, logo_cache)
+            jpegs = {}
+            for loc, (hl, sl) in (("en", (h1, sub)), ("fr", (fr_h1, fr_sub))):
+                jpegs[loc], secs = banner.build_web_banner(c, hl, sl, backdrops[gradient], fonts, assets, loc, sale)
+                path = OUT / f"{prefix}-{stamp}-{i}-{slug}-web-{loc}.jpg"
+                path.write_bytes(jpegs[loc])
+                entry["files"][loc] = path.name
+                print(f"  web banner {i} {loc}: {path.name}  {len(jpegs[loc]) // 1024} KB  {secs:.1f}s  [{entry['design']} {gradient}]")
+            if submit and key:
+                who = c["title"] if c["title"].lower().startswith(c["vendor"].lower()) else f"{c['vendor']} {c['title']}"
+                who_fr = fr_title or c["title"]
+                who_fr = who_fr if who_fr.lower().startswith(c["vendor"].lower()) else f"{c['vendor']} {who_fr}"
+                pct = c.get("discount_pct")
+                alt = {"en": (f"On sale, save {pct}%: {who}" if sale and pct else f"New release: {who}") + " at Moog Audio",
+                       "fr": (f"En solde, économisez {pct} % : {who_fr}" if sale and pct else f"Nouveauté : {who_fr}") + " chez Moog Audio"}
+                alt = {k: v[:250] for k, v in alt.items()}
+                link = {"type": "product", "handle": c["url"].rstrip("/").rsplit("/", 1)[-1]}
+                name = f"{name_prefix}{kind[0]} · {h1} · {stamp}"
+                ref = f"moog-digest:{prefix}:{stamp}:{pid}"
+                try:
+                    res = submit_web_banner(jpegs, alt, link, name, ref, key)
+                except RuntimeError as e:
+                    if "LINK_TARGET_NOT_FOUND" not in str(e):
+                        raise
+                    # the app's store cannot see the product (not published yet, or another store): plain URL link
+                    link = {"type": "url", "url": c["url"]}
+                    print(f"  note: banner app does not know product {link['url']}; linking the URL instead")
+                    res = submit_web_banner(jpegs, alt, link, name, ref + ":url", key)
+                entry.update(submitted=True, banner_id=res.get("bannerId") or res.get("id"), status=res.get("status"), link=link)
+                print(f"  web banner {i}: sent to the banner app -> {entry['banner_id']} ({entry['status']})")
+        except Exception as e:
+            entry["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+            print(f"WARNING: website banner {i} ({c['title'][:50]}) not {'sent' if submit and key else 'rendered'}: {entry['error']}")
+    if json_path:
+        manifest = json.loads(json_path.read_text())
+        manifest["web_banners"] = out
+        json_path.write_text(json.dumps(manifest, indent=2))
+    return out
+
+
 def run_hot(a, d, keep, sold_out, noise, now):
     """Product Launch e-mail: exactly one product per run (the most recently published one tagged
     newsletter-hot); any others stay tagged and go out on the following runs."""
@@ -1574,6 +1694,7 @@ def run_hot(a, d, keep, sold_out, noise, now):
     rc = klaviyo_step(a, json_path, html_path)
     if rc:
         return rc
+    web_banner_step([card], a, stamp, f"hot-{slug}", json_path)
     print(f"Product Launch: {len(keep)} tagged {TAG_HOT}, featuring the most recent; {len(queued)} left for later runs")
     if not live:
         print(f"WARNING: product is NOT LIVE yet (status {product.get('status')}, not published to the Online Store). "
@@ -1693,6 +1814,7 @@ def run_sale(a, d, keep, sold_out, noise, now):
     rc = klaviyo_step(a, json_path, html_path)
     if rc:
         return rc
+    web_banner_step(featured, a, stamp, "sale", json_path, sale=True)
     print(f"Deals: {len(keep)} tagged {TAG_SALE}, {n} with a discount in the e-mail, {len(no_discount)} without (untagged, not shown)")
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
     print(f"  TOP DEAL {hero['vendor']} | {hero['title']} | {hero['price']} (was {hero['compare']}, {hero['discount_pct']}% off)  [background: {hero_style['name']}]")
@@ -1836,6 +1958,8 @@ def main():
     rc = klaviyo_step(a, json_path, html_path)
     if rc:
         return rc
+    if a.dept == "store":
+        web_banner_step(([hero] if hero else []) + cards, a, stamp, "store", json_path)
 
     print(f"\nSubject : {subject}\nPreview : {preview}\nHTML    : {html_path}\nManifest: {json_path}")
     if hero:
