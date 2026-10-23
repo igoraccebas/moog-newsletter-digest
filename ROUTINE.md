@@ -25,6 +25,10 @@ End-to-end test 2026-09-03 16:56 UTC: 5 tagged products -> Klaviyo Draft
 override). Earlier attempts surfaced and fixed: oversized tool results (split article queries),
 egress blocked (env network allowlist), Klaviyo payload shape for revision 2024-10-15.
 
+Since 2026-10-23 the e-mail is one design-4A PNG banner per product (banner.py, see README); the routine
+prompt was updated the same day through the routines API (step 3 describes the banners, step 4 checks every
+banners[] png is https, step 7 reports their gradients).
+
 Network: the cloud environment must allow outbound HTTPS to a.klaviyo.com (draft publish)
 and moogaudio.com (blog teasers). Test run 2026-09-03 16:36 UTC rendered fine but publish
 failed with "Tunnel connection failed: 403 Forbidden" until egress was opened.
