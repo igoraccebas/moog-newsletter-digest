@@ -402,13 +402,15 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
             line = rows[y]
             return min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
 
-        # Only below the product's body: its white corner caps (Moog amps) are smooth and neutral too and would
-        # be eaten, but they sit beside rows that are mostly dark; a floor shows up under the last such row.
+        # Only below the product's body, i.e. under its last row that is still solid across most of its width.
+        # A light product with soft edges (the cream Numark Party Mix, a silver pedal) is smooth and neutral too
+        # and would otherwise be eaten from its sides; its bottom edge is a full-width row, the floor under it is
+        # not (Alesis: four jacks with keyed white between them, then the grey floor at the sides).
         seen_px = [x for y in range(h) for x in range(w) if rows[y][4 * x + 3] > 0]
         body_w = (max(seen_px) - min(seen_px) + 1) if seen_px else 1
         floor_y = 0
         for y in range(h):
-            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 90) >= 0.4 * body_w:
+            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128) >= 0.6 * body_w:
                 floor_y = y + 1
 
         def neutral(x, y):
