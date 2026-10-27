@@ -391,6 +391,39 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
                 seen[ny * w + nx] = 1
                 q.append((nx, ny))
 
+    # A studio floor or soft shadow is not pure white (Alesis: a 226-245 grey gradient under the unit, which `lo`
+    # keeps). Grow the keyed area through neutral, bright pixels that change by <= 6 levels from their neighbour: a
+    # smooth floor qualifies, the product's edge (a jump of 50+) and its own light panels (not neutral/bright, or
+    # separated from the floor by an edge) do not. Products only: a logo's white interior must stay.
+    if holes:
+        q = deque((x, y) for y in range(h) for x in range(w) if seen[y * w + x] and rows[y][4 * x + 3] == 0)
+
+        def lum(x, y):
+            line = rows[y]
+            return min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
+
+        # Only below the product's body: its white corner caps (Moog amps) are smooth and neutral too and would
+        # be eaten, but they sit beside rows that are mostly dark; a floor shows up under the last such row.
+        seen_px = [x for y in range(h) for x in range(w) if rows[y][4 * x + 3] > 0]
+        body_w = (max(seen_px) - min(seen_px) + 1) if seen_px else 1
+        floor_y = 0
+        for y in range(h):
+            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 90) >= 0.4 * body_w:
+                floor_y = y + 1
+
+        def neutral(x, y):
+            line = rows[y]
+            return max(line[4 * x:4 * x + 3]) - min(line[4 * x:4 * x + 3]) <= 8
+        while q:
+            x, y = q.popleft()
+            m = lum(x, y)
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if (0 <= nx < w and floor_y <= ny < h and rows[ny][4 * nx + 3] != 0     # includes the first pass's soft ramp
+                        and lum(nx, ny) >= 205 and neutral(nx, ny) and abs(lum(nx, ny) - m) <= 6):
+                    seen[ny * w + nx] = 1
+                    rows[ny][4 * nx + 3] = 0
+                    q.append((nx, ny))
+
     # Backdrop showing through a gap in the product (inside a headband, a handle, a cable loop) is enclosed, so
     # the pass above misses it. Key an enclosed region too when it is almost all pure backdrop white (>= hi,
     # where panels are 200-240) and large enough that a white knob or printed label does not qualify.
