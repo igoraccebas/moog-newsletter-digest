@@ -30,6 +30,9 @@ LOGO_W, LOGO_H = 240, 56             # "Brand logo (white)" slot
 LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the standard box (height-bound, not width-bound)
     "Universal Audio": (240, 84),    # diamond + wordmark; 84 still clears the 20px gap above mid_top with room to spare
 }
+LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
+    "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
+}
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
 WHITE, BLACK, RED = (255, 255, 255), (0, 0, 0), (193, 39, 45)   # #c1272d = sale red
@@ -1002,6 +1005,24 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     return crop(rows, (max(0, x0), max(0, y0), min(w, x1), min(h, y1)))
 
 
+def local_logo(path, box_w, box_h):
+    """A white-on-transparent logo from assets/, trimmed and area-averaged down to fit inside box_w x box_h."""
+    w, h, rows = decode_png(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), "rb").read())
+    w, h, rows = crop(rows, bbox_alpha(w, h, rows))
+    scale = min(box_w / w, box_h / h, 1.0)
+    ow, oh = max(1, round(w * scale)), max(1, round(h * scale))
+    out = []
+    for oy in range(oh):
+        ya, yb = oy * h // oh, max(oy * h // oh + 1, (oy + 1) * h // oh)
+        line = bytearray(4 * ow)
+        for ox in range(ow):
+            xa, xb = ox * w // ow, max(ox * w // ow + 1, (ox + 1) * w // ow)
+            tot = sum(sum(rows[y][4 * xa + 3:4 * xb + 3:4]) for y in range(ya, yb))
+            line[4 * ox:4 * ox + 4] = bytes((255, 255, 255, tot // ((yb - ya) * (xb - xa))))
+        out.append(line)
+    return ow, oh, out
+
+
 def fetch_logo(vendor, cache, scale_box=None):
     """White silhouette of the brand-collection logo (Shopify collection image, keyed and filled white),
     trimmed and fitted to the logo box (the e-mail's 240x56, or scale_box=(w, h) for the website layout; a
@@ -1014,6 +1035,9 @@ def fetch_logo(vendor, cache, scale_box=None):
     if key in cache:
         return cache[key]
     result = None
+    if vendor in LOCAL_LOGOS:
+        result = cache[key] = local_logo(LOCAL_LOGOS[vendor], box_w, box_h)
+        return result
     try:
         data = json.loads(fetch(f"{STORE}/collections/{vendor_handle(vendor)}.json", timeout=20))
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
