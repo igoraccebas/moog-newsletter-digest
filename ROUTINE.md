@@ -92,3 +92,17 @@ were updated the same day through the routines API (step 3 describes it, step 7 
 Environment needs: secret `MOOG_BANNERS_API_KEY` (live moogaudio.com store key) and egress to
 `banner-scheduler--moog-banner-scheduler.us-east4.hosted.app` and `storage.googleapis.com` (both added by Igor 2026-10-23).
 A banner problem never fails a run; it shows as a WARNING line in the run report.
+
+---
+
+# Permissions in the cloud runs (since 2026-10-28)
+
+The Deals run of 2026-10-28 was stopped by the cloud auto-mode safety check ("Code from External": freshly cloned code
+that publishes to Klaviyo and the banner app). Fixes: the repo carries `.claude/settings.json` allowing exactly the three
+publish commands (`python3 digest.py store|hot|sale --from-json out/<x>.json --extras out/extras.json --publish`); the
+prompts work in the session's own checkout (no second clone, no `cd`), run that command alone and unmodified, and report
+"BLOCKED by the permission check" instead of improvising. Narrow allow rules are documented to apply before the auto-mode
+classifier; whether a cloud run honours a repo's project rules is not documented, so watch the next runs.
+Same day: Shopify Admin API 2026-10 removed Product.featuredImage / images; the queries use featuredMedia / media.
+Cloud-session fixes had landed on side branches (claude/nice-mendel-iycld3, claude/stoic-hypatia-mf79i7) and were merged
+into master; the prompts now say not to commit or push.

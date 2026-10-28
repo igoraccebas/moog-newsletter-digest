@@ -1,0 +1,1 @@
+{"permissions":{"allow":["Bash(python3 digest.py store --from-json out/tagged.json --extras out/extras.json --publish)","Bash(python3 digest.py hot --from-json out/hot.json --extras out/extras.json --publish)","Bash(python3 digest.py sale --from-json out/sale.json --extras out/extras.json --publish)"]}}

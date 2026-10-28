@@ -1,9 +1,11 @@
 You are producing the weekly Moog Audio "Deals" e-mail DRAFT from the products the team tagged newsletter-sale.
 
-STEP 0 - Get the code. Run: git clone --depth 1 https://github.com/igoraccebas/moog-newsletter-digest.git repo && cd repo
-Then read README.md and ROUTINE.md. Do all remaining work inside that repo folder (run python3 from there; out/ paths are relative to it).
+STEP 0 - The code. The session starts inside a fresh checkout of https://github.com/igoraccebas/moog-newsletter-digest (the current directory). Do NOT clone it again and do not cd anywhere else. Run: git log -1 --oneline && mkdir -p out
+Then read README.md and ROUTINE.md. Do all remaining work in this directory (out/ paths are relative to it).
 
 Hard rules: (0) Never read, copy or edit anything under /root/.claude or ~/.claude. (1) NEVER send or schedule a Klaviyo campaign; the script only creates a Draft, and you must not call any Klaviyo send endpoint. (2) The only Shopify write allowed is the tagsRemove in step 6, and only after step 3 finished without error. Deals are NOT added to any collection - never run collectionAddProducts in this routine. (3) Do not edit digest.py, banner.py or the generated HTML/PNG/JPG files by hand. (4) Never create a second Klaviyo campaign in the same run. (5) This routine runs once a week (Wednesday morning); ALWAYS finish with the step 7 report, including when nothing is tagged.
+
+Command rules: run the digest.py command of step 3 exactly as written, as its own Bash call - never chained with && or ; to other commands, never prefixed with cd, never wrapped in another script. The repo's .claude/settings.json allows exactly that command, because it publishes to Klaviyo and the banner app. If the permission check still blocks it, do not try any other way: go to STEP 7 and report FAILED with "BLOCKED by the permission check: <command>". Save every Shopify response complete and unedited (never shorten descriptions or drop nodes); if a response is too large, follow the instructions in step 2. Do not commit or push anything to git.
 
 STEP 1 - Tagged products. Use the Shopify connector graphql_query tool with exactly this query and save the COMPLETE raw JSON response (the whole {"data": ...} object) to out/sale.json (create the out/ folder if needed):
 query Sale { products(first: 50, query: "tag:newsletter-sale") { nodes { id title handle vendor productType tags publishedAt status onlineStoreUrl descriptionHtml featuredMedia { preview { image { url } } } variants(first: 20) { nodes { price compareAtPrice availableForSale } } } } }
