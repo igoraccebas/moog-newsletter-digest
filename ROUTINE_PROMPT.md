@@ -6,7 +6,7 @@ Then read README.md and ROUTINE.md. Do all remaining work inside that repo folde
 Hard rules: (0) Never read, copy or edit anything under /root/.claude or ~/.claude. (1) NEVER send or schedule a Klaviyo campaign; the script only creates a Draft, and you must not call any Klaviyo send endpoint. (2) The only Shopify writes allowed are the two in steps 5 and 6, and only after step 3 succeeded. (3) Do not edit digest.py, banner.py or the generated HTML/PNG/JPG files by hand. (4) Never create a second Klaviyo campaign in the same run.
 
 STEP 1 - Tagged products. Use the Shopify connector graphql_query tool with exactly this query and save the COMPLETE raw JSON response (the whole {"data": ...} object) to out/tagged.json (create the out/ folder if needed):
-query Tagged { products(first: 50, query: "tag:newsletter OR tag:newsletter-hero") { nodes { id title handle vendor productType tags publishedAt status onlineStoreUrl descriptionHtml featuredImage { url } variants(first: 20) { nodes { price compareAtPrice availableForSale } } } } }
+query Tagged { products(first: 50, query: "tag:newsletter OR tag:newsletter-hero") { nodes { id title handle vendor productType tags publishedAt status onlineStoreUrl descriptionHtml featuredMedia { preview { image { url } } } variants(first: 20) { nodes { price compareAtPrice availableForSale } } } } }
 If the nodes list is empty, skip to STEP 7 and report "nothing tagged".
 
 STEP 2 - Blog and events (two small queries; never fetch news post bodies, they are too large).

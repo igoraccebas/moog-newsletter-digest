@@ -282,8 +282,14 @@ def normalize_admin(node):
         variants.append({"price": v["price"],
                          "compare_at_price": cmp_ if cmp_ and float(cmp_) > 0 else None,
                          "available": bool(v.get("availableForSale"))})
-    img = (node.get("featuredImage") or {}).get("url")
-    gallery = [n.get("url") for n in (node.get("images") or {}).get("nodes", []) if n.get("url")]
+    # Admin API 2026-10 removed Product.featuredImage / images: the queries ask for featuredMedia / media and the
+    # image URL sits under preview.image.url (videos and 3D models are skipped). Older responses still work.
+    def media_url(m):
+        return (((m or {}).get("preview") or {}).get("image") or {}).get("url")
+    img = (node.get("featuredImage") or {}).get("url") or media_url(node.get("featuredMedia"))
+    gallery = ([n.get("url") for n in (node.get("images") or {}).get("nodes", []) if n.get("url")]
+               or [media_url(n) for n in (node.get("media") or {}).get("nodes", [])
+                   if n.get("mediaContentType", "IMAGE") == "IMAGE" and media_url(n)])
     ordered = ([img] if img else []) + [u for u in gallery if u != img]   # featured first, then the rest
     return {
         "id": int(str(node["id"]).rsplit("/", 1)[-1]), "admin_id": node["id"],

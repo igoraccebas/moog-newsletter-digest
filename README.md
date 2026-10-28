@@ -70,7 +70,7 @@ Where the content comes from — all from the Shopify product, nothing hand-writ
 - headline / sub-line: `split_title()` — split on " - " if the title has one, else right after the
   first model-number token ("Morphor Echon 6" | "Analog Polyphonic BBD Synthesizer"); otherwise the
   whole title with the product type as sub-line.
-- images: `featuredImage` first, then the next three of `images(first: 4)`; thumbnails are
+- images: `featuredMedia` first, then the next three images of `media(first: 4)` (Admin API 2026-10 removed `featuredImage` / `images`; older responses still load); thumbnails are
   centre-cropped by the Shopify CDN so the tiles line up.
 - description: `long_blurb()` — the first paragraphs of the description (no headings, no lists,
   no repeated title line), cut at a sentence end near 480 characters.
