@@ -1041,7 +1041,7 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     return crop(rows, (max(0, x0), max(0, y0), min(w, x1), min(h, y1)))
 
 
-def local_logo(path, box_w, box_h):
+def local_logo_white(path, box_w, box_h):
     """A white-on-transparent logo from assets/, trimmed and area-averaged down to fit inside box_w x box_h."""
     w, h, rows = decode_png(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), "rb").read())
     w, h, rows = crop(rows, bbox_alpha(w, h, rows))
@@ -1059,6 +1059,38 @@ def local_logo(path, box_w, box_h):
     return ow, oh, out
 
 
+def local_logo(vendor, box_w, box_h):
+    """Logo from assets/logos/<vendor-handle>.png (black or coloured on white) for brands whose Shopify collection
+    has no image: keyed and treated like a collection logo, trimmed, then area-averaged down to fit the box.
+    None when there is no such file."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logos", vendor_handle(vendor) + ".png")
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        w, h, rows = decode_png(f.read())
+    key_white(w, h, rows, holes=False)
+    logo_treatment(w, h, rows, saturation_threshold=2)     # near-black marks have a meaningless saturation: always white
+    box = bbox_alpha(w, h, rows)
+    if not box:
+        return None
+    w, h, rows = crop(rows, box)
+    scale = min(box_w / w, box_h / h, 1.0)
+    nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+    if (nw, nh) == (w, h):
+        return w, h, rows
+    out = []
+    for y in range(nh):
+        ya, yb = int(y * h / nh), max(int(y * h / nh) + 1, int((y + 1) * h / nh))
+        line = bytearray(4 * nw)
+        for x in range(nw):
+            xa, xb = int(x * w / nw), max(int(x * w / nw) + 1, int((x + 1) * w / nw))
+            n = (yb - ya) * (xb - xa)
+            for c in range(4):
+                line[4 * x + c] = sum(rows[j][4 * i + c] for j in range(ya, yb) for i in range(xa, xb)) // n
+        out.append(line)
+    return nw, nh, out
+
+
 def fetch_logo(vendor, cache, scale_box=None):
     """White silhouette of the brand-collection logo (Shopify collection image, keyed and filled white),
     trimmed and fitted to the logo box (the e-mail's 240x56, or scale_box=(w, h) for the website layout; a
@@ -1072,18 +1104,23 @@ def fetch_logo(vendor, cache, scale_box=None):
         return cache[key]
     result = None
     if vendor in LOCAL_LOGOS:
-        result = cache[key] = local_logo(LOCAL_LOGOS[vendor], box_w, box_h)
+        result = cache[key] = local_logo_white(LOCAL_LOGOS[vendor], box_w, box_h)
         return result
     try:
         data = json.loads(fetch(f"{STORE}/collections/{vendor_handle(vendor)}.json", timeout=20))
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
         if src:
             result = fetch_fit_trim(src, box_w, box_h, white_mask=True)
+        else:
+            result = local_logo(vendor, box_w, box_h)
     except (urllib.error.HTTPError, ValueError) as e:
         if isinstance(e, urllib.error.HTTPError) and e.code != 404:
             raise BannerError(f"logo for {vendor} could not be fetched (HTTP {e.code})") from e
-        # 404 = brand without a collection; ValueError = collection image is a photo, not a logo (by design)
-        print(f"  note: no logo for {vendor} ({type(e).__name__}: {str(e)[:60]}); using the vendor name")
+        # 404 = brand without a collection; ValueError = collection image is a photo, not a logo (by design):
+        # an assets/logos/<handle>.png file if there is one, else the vendor name in white type
+        result = local_logo(vendor, box_w, box_h)
+        if not result:
+            print(f"  note: no logo for {vendor} ({type(e).__name__}: {str(e)[:60]}); using the vendor name")
     except Exception as e:
         raise BannerError(f"logo for {vendor} could not be fetched ({type(e).__name__}: {str(e)[:80]})") from e
     cache[key] = result
