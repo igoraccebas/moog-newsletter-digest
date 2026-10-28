@@ -1628,7 +1628,16 @@ def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, subm
         fr_title, fr_type = fetch_fr_title(c["url"])
         if fr_title and c.get("variants"):
             fr_title = re.split(r"\s+[-–]\s+", fr_title)[0]      # colour family: same stem rule as the card title
-        fr_h1, fr_sub = split_title(fr_title, c["vendor"], fr_type or c.get("type") or "") if fr_title else (h1, sub)
+        # The French store titles are machine translations that translate brand and model names too ("Solid State
+        # Logic" -> "LOGIQUE À L'ÉTAT SOLIDE", 2026-10-28): the headline stays the English product name, only the
+        # sub-line (the description part of the title) comes from the French title.
+        fr_h1, fr_sub = h1, sub
+        if fr_title:
+            fr_head, fr_tail = split_title(fr_title, c["vendor"], fr_type or c.get("type") or "")
+            if fr_tail and fr_head != fr_title:                # the French title had its own description part
+                fr_sub = fr_tail
+            elif fr_type and sub == (c.get("type") or ""):      # the sub-line is the product type: use the French one
+                fr_sub = fr_type
         slug = re.sub(r"[^a-z0-9]+", "-", h1.lower()).strip("-")[:40]
         pid = (c.get("ids") or [slug])[0]
         entry = {"product_id": (c.get("admin_ids") or [None])[0], "title": c["title"], "design": "3A" if sale else "2A",
@@ -1647,8 +1656,7 @@ def web_banner_step(featured, a, stamp, prefix, json_path=None, sale=False, subm
                 print(f"  web banner {i} {loc}: {path.name}  {len(jpegs[loc]) // 1024} KB  {secs:.1f}s  [{entry['design']} {gradient}]")
             if submit and key:
                 who = c["title"] if c["title"].lower().startswith(c["vendor"].lower()) else f"{c['vendor']} {c['title']}"
-                who_fr = fr_title or c["title"]
-                who_fr = who_fr if who_fr.lower().startswith(c["vendor"].lower()) else f"{c['vendor']} {who_fr}"
+                who_fr = (h1 if h1.lower().startswith(c["vendor"].lower()) else f"{c['vendor']} {h1}") + (f" – {fr_sub}" if fr_sub else "")
                 pct = c.get("discount_pct")
                 alt = {"en": (f"On sale, save {pct}%: {who}" if sale and pct else f"New release: {who}") + " at Moog Audio",
                        "fr": (f"En solde, économisez {pct} % : {who_fr}" if sale and pct else f"Nouveauté : {who_fr}") + " chez Moog Audio"}
