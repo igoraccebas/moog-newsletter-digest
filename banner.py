@@ -32,6 +32,8 @@ LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the st
 }
 LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
     "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
+    "Tip Top Audio": "assets/logos/tip-top-audio-white.png",   # collection logo is dark green on white: kept its colour and
+                                                                # vanished on the teal backdrop (Igor, 2026-10-28); white cutout
 }
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
