@@ -30,6 +30,9 @@ LOGO_W, LOGO_H = 240, 56             # "Brand logo (white)" slot
 LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the standard box (height-bound, not width-bound)
     "Universal Audio": (240, 84),    # diamond + wordmark; 84 still clears the 20px gap above mid_top with room to spare
 }
+LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
+    "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
+}
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
 WHITE, BLACK, RED = (255, 255, 255), (0, 0, 0), (193, 39, 45)   # #c1272d = sale red
@@ -387,6 +390,42 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
             if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
                 seen[ny * w + nx] = 1
                 q.append((nx, ny))
+
+    # A studio floor or soft shadow is not pure white (Alesis: a 226-245 grey gradient under the unit, which `lo`
+    # keeps). Grow the keyed area through neutral, bright pixels that change by <= 6 levels from their neighbour: a
+    # smooth floor qualifies, the product's edge (a jump of 50+) and its own light panels (not neutral/bright, or
+    # separated from the floor by an edge) do not. Products only: a logo's white interior must stay.
+    if holes:
+        q = deque((x, y) for y in range(h) for x in range(w) if seen[y * w + x] and rows[y][4 * x + 3] == 0)
+
+        def lum(x, y):
+            line = rows[y]
+            return min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
+
+        # Only below the product's body: under its last row that is solid (opaque and not floor-coloured) across
+        # half its width. A floor row is floor-coloured apart from what stands on it (Alesis: four jacks, 37% of
+        # the width), a product's bottom edge is solid whatever its colour (the cream Numark Party Mix ends in a
+        # darker full-width rim, 90%; its soft cream sides would otherwise be eaten), and a drop shadow under an
+        # amp counts as product too, which keeps the Moog's white corner caps above it.
+        seen_px = [x for y in range(h) for x in range(w) if rows[y][4 * x + 3] > 0]
+        body_w = (max(seen_px) - min(seen_px) + 1) if seen_px else 1
+        floor_y = 0
+        for y in range(h):
+            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 205) >= 0.5 * body_w:
+                floor_y = y + 1
+
+        def neutral(x, y):
+            line = rows[y]
+            return max(line[4 * x:4 * x + 3]) - min(line[4 * x:4 * x + 3]) <= 8
+        while q:
+            x, y = q.popleft()
+            m = lum(x, y)
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if (0 <= nx < w and floor_y <= ny < h and rows[ny][4 * nx + 3] != 0     # includes the first pass's soft ramp
+                        and lum(nx, ny) >= 205 and neutral(nx, ny) and abs(lum(nx, ny) - m) <= 6):
+                    seen[ny * w + nx] = 1
+                    rows[ny][4 * nx + 3] = 0
+                    q.append((nx, ny))
 
     # Backdrop showing through a gap in the product (inside a headband, a handle, a cable loop) is enclosed, so
     # the pass above misses it. Key an enclosed region too when it is almost all pure backdrop white (>= hi,
@@ -1002,6 +1041,24 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     return crop(rows, (max(0, x0), max(0, y0), min(w, x1), min(h, y1)))
 
 
+def local_logo(path, box_w, box_h):
+    """A white-on-transparent logo from assets/, trimmed and area-averaged down to fit inside box_w x box_h."""
+    w, h, rows = decode_png(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), "rb").read())
+    w, h, rows = crop(rows, bbox_alpha(w, h, rows))
+    scale = min(box_w / w, box_h / h, 1.0)
+    ow, oh = max(1, round(w * scale)), max(1, round(h * scale))
+    out = []
+    for oy in range(oh):
+        ya, yb = oy * h // oh, max(oy * h // oh + 1, (oy + 1) * h // oh)
+        line = bytearray(4 * ow)
+        for ox in range(ow):
+            xa, xb = ox * w // ow, max(ox * w // ow + 1, (ox + 1) * w // ow)
+            tot = sum(sum(rows[y][4 * xa + 3:4 * xb + 3:4]) for y in range(ya, yb))
+            line[4 * ox:4 * ox + 4] = bytes((255, 255, 255, tot // ((yb - ya) * (xb - xa))))
+        out.append(line)
+    return ow, oh, out
+
+
 def fetch_logo(vendor, cache, scale_box=None):
     """White silhouette of the brand-collection logo (Shopify collection image, keyed and filled white),
     trimmed and fitted to the logo box (the e-mail's 240x56, or scale_box=(w, h) for the website layout; a
@@ -1014,6 +1071,9 @@ def fetch_logo(vendor, cache, scale_box=None):
     if key in cache:
         return cache[key]
     result = None
+    if vendor in LOCAL_LOGOS:
+        result = cache[key] = local_logo(LOCAL_LOGOS[vendor], box_w, box_h)
+        return result
     try:
         data = json.loads(fetch(f"{STORE}/collections/{vendor_handle(vendor)}.json", timeout=20))
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
