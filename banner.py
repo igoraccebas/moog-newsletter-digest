@@ -29,9 +29,13 @@ PAD_X, PAD_Y = 56, 48                # design padding: 48px 56px
 LOGO_W, LOGO_H = 240, 56             # "Brand logo (white)" slot
 LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the standard box (height-bound, not width-bound)
     "Universal Audio": (240, 84),    # diamond + wordmark; 84 still clears the 20px gap above mid_top with room to spare
+    "HK Audio": (240, 84),           # square stacked mark, same treatment as UA
 }
 LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
     "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
+    "Waldorf": "assets/logos/waldorf-white.png",   # official SVG from Igor, 2026-10-30
+    "HK Audio": "assets/logos/hk-audio-white.png",  # logo files from Igor, 2026-10-30
+    "OLLO Audio": "assets/logos/ollo-audio-white.png",
 }
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
@@ -421,8 +425,12 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
             x, y = q.popleft()
             m = lum(x, y)
             for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                if (0 <= nx < w and floor_y <= ny < h and rows[ny][4 * nx + 3] != 0     # includes the first pass's soft ramp
-                        and lum(nx, ny) >= 205 and neutral(nx, ny) and abs(lum(nx, ny) - m) <= 6):
+                # Above the bottom only a very gradual ramp (<= 3 levels a step) qualifies: a contact shadow beside
+                # the product (OLLO X2's stand) fades out that softly, while the Moog amp's white corner caps start
+                # with a sharp edge and stay.
+                if (0 <= nx < w and 0 <= ny < h and rows[ny][4 * nx + 3] != 0     # includes the first pass's soft ramp
+                        and lum(nx, ny) >= 205 and neutral(nx, ny)
+                        and abs(lum(nx, ny) - m) <= (6 if ny >= floor_y else 3)):
                     seen[ny * w + nx] = 1
                     rows[ny][4 * nx + 3] = 0
                     q.append((nx, ny))
