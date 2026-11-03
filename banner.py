@@ -1023,14 +1023,41 @@ def fit_headline(fonts, text, max_w):
 
 
 # --------------------------------------------------------------------------------------------------- assets ----
+_REMBG = {}
+
+
+def rembg_cutout(png_bytes):
+    """Optional: cut a product out with rembg (u2net) when the package is installed (pip install rembg onnxruntime;
+    the model downloads once from github.com). Returns (w, h, rows) or None, in which case the caller falls back
+    to the stdlib white-key. MOOG_NO_REMBG=1 forces the fallback."""
+    if os.environ.get("MOOG_NO_REMBG"):
+        return None
+    try:
+        if "session" not in _REMBG:
+            from rembg import new_session, remove
+            _REMBG["session"], _REMBG["remove"] = new_session("u2net"), remove
+        out = _REMBG["remove"](png_bytes, session=_REMBG["session"])
+        return decode_png(out)
+    except Exception as e:
+        if not _REMBG.get("warned"):
+            _REMBG["warned"] = True
+            print(f"  note: rembg not used ({type(e).__name__}: {str(e)[:60]}); using the white-key cut-out")
+        return None
+
+
 def fetch_fit_trim(src, box_w, box_h, white_mask=False):
     """Fetch an image from the Shopify CDN fitted inside box_w x box_h, key its white background, trim the
     transparent margins. If the visible part fills less than 85% of the box (white margins in the source),
     fetch once more, larger, so it fills the box. white_mask=True paints the remaining pixels white (logos).
     Returns (w, h, rows) or None when nothing is left after keying."""
     def pass_(width, height):
-        w, h, rows = decode_png(fetch(cdn_png(src, width, height)))
-        key_white(w, h, rows, holes=not white_mask)
+        data = fetch(cdn_png(src, width, height))
+        cut = None if white_mask else rembg_cutout(data)
+        if cut:
+            w, h, rows = cut                                  # rembg (u2net) already removed the backdrop
+        else:
+            w, h, rows = decode_png(data)
+            key_white(w, h, rows, holes=not white_mask)
         if white_mask:
             # a logo sits on a white box; if keying removed almost nothing the collection image is a photo or
             # a banner (Universal Audio's is a red product shot) — not usable as a logo
