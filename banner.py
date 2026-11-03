@@ -29,6 +29,8 @@ PAD_X, PAD_Y = 56, 48                # design padding: 48px 56px
 LOGO_W, LOGO_H = 240, 56             # "Brand logo (white)" slot
 LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the standard box (height-bound, not width-bound)
     "Universal Audio": (240, 84),    # diamond + wordmark; 84 still clears the 20px gap above mid_top with room to spare
+    "Old Blood Noise Endeavors": (240, 84),   # tall drop mark: 51x56 at the standard box read tiny (Igor, 2026-11-03)
+    "Neumann": (240, 84),                     # diamond + NEUMANN.BERLIN wordmark, same
 }
 LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
     "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
