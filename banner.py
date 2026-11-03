@@ -453,7 +453,27 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
             if len(region) >= min_area and pure >= 0.9 * len(region):
                 for x, y in region:
                     clear(x, y)
+    defringe(w, h, rows)
     return rows
+
+
+def defringe(w, h, rows, depth=2, thr=150):
+    """Products only: drop the light halo left along the cut edge (antialiasing / JPEG blended with the white
+    backdrop). Within `depth` pixels of a transparent pixel, a bright neutral-ish pixel becomes transparent (a
+    soft step for the outermost ring), so the product edge no longer shows a white outline on a coloured banner."""
+    for _ in range(depth):
+        kill = []
+        for y in range(h):
+            line = rows[y]
+            for x in range(w):
+                i = 4 * x
+                if line[i + 3] == 0 or min(line[i], line[i + 1], line[i + 2]) < thr:
+                    continue
+                if (x == 0 or line[i - 1] == 0 or x == w - 1 or line[i + 7] == 0
+                        or y == 0 or rows[y - 1][i + 3] == 0 or y == h - 1 or rows[y + 1][i + 3] == 0):
+                    kill.append((x, y))
+        for x, y in kill:
+            rows[y][4 * x + 3] = 0
 
 
 def as_white_mask(w, h, rows):
