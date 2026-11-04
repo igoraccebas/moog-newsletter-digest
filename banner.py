@@ -33,6 +33,7 @@ LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the st
 LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
     "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
 }
+FORCE_WHITE_LOGOS = {"Tip Top Audio"}   # collection logo has brand colours (dark green) that vanish on the gradients: always white
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
 WHITE, BLACK, RED = (255, 255, 255), (0, 0, 0), (193, 39, 45)   # #c1272d = sale red
@@ -1003,7 +1004,7 @@ def fit_headline(fonts, text, max_w):
 
 
 # --------------------------------------------------------------------------------------------------- assets ----
-def fetch_fit_trim(src, box_w, box_h, white_mask=False):
+def fetch_fit_trim(src, box_w, box_h, white_mask=False, force_white=False):
     """Fetch an image from the Shopify CDN fitted inside box_w x box_h, key its white background, trim the
     transparent margins. If the visible part fills less than 85% of the box (white margins in the source),
     fetch once more, larger, so it fills the box. white_mask=True paints the remaining pixels white (logos).
@@ -1017,7 +1018,7 @@ def fetch_fit_trim(src, box_w, box_h, white_mask=False):
             opaque = sum(1 for line in rows for x in range(w) if line[4 * x + 3] > 32)
             if opaque > 0.85 * w * h:
                 raise ValueError("collection image is not a logo on a white box")
-            logo_treatment(w, h, rows)
+            logo_treatment(w, h, rows, saturation_threshold=2 if force_white else 0.18)
         return w, h, rows, bbox_alpha(w, h, rows)
 
     w, h, rows, box = pass_(box_w, box_h)
@@ -1106,11 +1107,15 @@ def fetch_logo(vendor, cache, scale_box=None):
     if vendor in LOCAL_LOGOS:
         result = cache[key] = local_logo_white(LOCAL_LOGOS[vendor], box_w, box_h)
         return result
+    result = local_logo(vendor, box_w, box_h)      # a file in assets/logos wins over the collection image
+    if result:
+        cache[key] = result
+        return result
     try:
         data = json.loads(fetch(f"{STORE}/collections/{vendor_handle(vendor)}.json", timeout=20))
         src = ((data.get("collection") or {}).get("image") or {}).get("src")
         if src:
-            result = fetch_fit_trim(src, box_w, box_h, white_mask=True)
+            result = fetch_fit_trim(src, box_w, box_h, white_mask=True, force_white=vendor in FORCE_WHITE_LOGOS)
         else:
             result = local_logo(vendor, box_w, box_h)
     except (urllib.error.HTTPError, ValueError) as e:
