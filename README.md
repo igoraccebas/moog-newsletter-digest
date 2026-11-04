@@ -124,6 +124,14 @@ New Releases (`add_to_collection` is null in the manifest).
   the same in light and dark mode, which is why the layout is an image. The design's grain overlay is left out
   (it makes the PNG ten times larger). Banners weigh ~190–350 KB and take 1.5–3 s each plus ~4 s per colourway
   for the backdrop.
+- Product cut-out (since 2026-11-04): **rembg** (model isnet-general-use, `rembg_cut.py`), run in its own venv
+  `.cache/rembg-venv` that `banner.py` creates on first use (`pip install rembg[cpu]==2.0.86`, ~30 s; the 179 MB model
+  downloads to `.cache/rembg-models` on the first cut; a cloud run pays both, ~1 min, plus ~10 s per product). Needs
+  egress to pypi.org / files.pythonhosted.org and github.com. Two safety nets: if rembg drops more than 15% of the
+  clearly-not-white product (Korg Phase-8's cream panel) the white key below is used for that photo, and enclosed
+  white parts rembg removed but the white key keeps (Korg Kronos white keys) are put back. rembg unavailable ->
+  `WARNING: rembg unavailable …` and the white key for every product; `MOOG_CUTOUT=key` forces the white key.
+  Logos never use rembg.
 - Font: `assets/fonts/Helvetica.ttf` is **required** (the design system's file; see assets/fonts/README.md).
   Without it the run stops with `ERROR: Deals banners need a font…` and writes nothing. `--font-dir DIR`
   or `MOOG_FONT_DIR` point at another folder (macOS Arial) for local work only.

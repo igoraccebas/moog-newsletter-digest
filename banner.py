@@ -21,7 +21,7 @@ costs a few seconds (CDN fetches + PNG decode + text). Fonts: assets/fonts/Helve
 (Igor's file; decision #15); --font-dir / MOOG_FONT_DIR point at another folder for local work (Arial).
 There is deliberately NO automatic fallback so a cloud run can never render in the wrong face by accident.
 """
-import json, math, os, re, struct, time, urllib.error, urllib.request, zlib
+import json, math, os, re, struct, sys, time, urllib.error, urllib.request, zlib
 from collections import deque
 
 W, H = 900, 675                      # design 4A / 4B frame
@@ -1189,8 +1189,178 @@ def fetch_logo(vendor, cache, scale_box=None):
     return result
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+REMBG_VENV = os.environ.get("MOOG_REMBG_VENV") or os.path.join(HERE, ".cache", "rembg-venv")
+REMBG_MODELS = os.environ.get("U2NET_HOME") or os.path.join(HERE, ".cache", "rembg-models")
+REMBG_SPEC = "rembg[cpu]==2.0.86"
+_rembg_state = {}                    # "python": venv interpreter once ready, "error": why rembg is unavailable
+
+
+def _rembg_python():
+    """The venv interpreter that has rembg, creating the venv on first use (~30 s; the model, 179 MB, downloads on
+    the first cut). None when it cannot be set up (no egress to PyPI / GitHub): the caller falls back to key_white."""
+    if "python" in _rembg_state or "error" in _rembg_state:
+        return _rembg_state.get("python")
+    import subprocess
+    py = os.path.join(REMBG_VENV, "bin", "python")
+    try:
+        ok = os.path.exists(py) and subprocess.run([py, "-I", "-c", "import rembg"], capture_output=True).returncode == 0
+        if not ok:
+            print("  rembg: setting up the cut-out venv (first run only, ~30 s)")
+            subprocess.run([sys.executable, "-m", "venv", REMBG_VENV], check=True, capture_output=True)
+            subprocess.run([py, "-m", "pip", "install", "-q", "--disable-pip-version-check", REMBG_SPEC],
+                           check=True, capture_output=True, timeout=900)
+        _rembg_state["python"] = py
+    except Exception as e:
+        _rembg_state["error"] = f"{type(e).__name__}: {str(e)[:120]}"
+        print(f"  WARNING: rembg unavailable ({_rembg_state['error']}); using the white key for product cut-outs")
+    return _rembg_state.get("python")
+
+
+def resize_rgba(w, h, rows, nw, nh):
+    """Area-average an RGBA image down to nw x nh (premultiplied, so dark products get no light fringe)."""
+    out = []
+    for y in range(nh):
+        ya, yb = y * h // nh, max(y * h // nh + 1, (y + 1) * h // nh)
+        line = bytearray(4 * nw)
+        for x in range(nw):
+            xa, xb = x * w // nw, max(x * w // nw + 1, (x + 1) * w // nw)
+            r = g = b = a = 0
+            for j in range(ya, yb):
+                src = rows[j]
+                for i in range(xa, xb):
+                    al = src[4 * i + 3]
+                    if al:
+                        r += src[4 * i] * al
+                        g += src[4 * i + 1] * al
+                        b += src[4 * i + 2] * al
+                        a += al
+            n = (yb - ya) * (xb - xa)
+            if a:
+                line[4 * x:4 * x + 4] = bytes((r // a, g // a, b // a, a // n))
+        out.append(line)
+    return nw, nh, out
+
+
+def rembg_cutout(src, box_w, box_h):
+    """rembg (isnet-general-use) on the product photo (up to 1200 px), trimmed, then fitted to the box.
+    None when rembg is unavailable or returns nothing; raises BannerError when the photo cannot be fetched."""
+    if src not in _rembg_cache:
+        _rembg_cache[src] = _rembg_full(src)
+    full = _rembg_cache[src]
+    if not full:
+        return None
+    w, h, rows = full
+    scale = min(box_w / w, box_h / h, 1.0)
+    if scale < 1.0:
+        return resize_rgba(w, h, rows, max(1, round(w * scale)), max(1, round(h * scale)))
+    return w, h, [bytearray(r) for r in rows]
+
+
+_rembg_cache = {}                    # src -> trimmed full-size cut-out, shared by the e-mail and website banners
+
+
+def _rembg_full(src):
+    py = _rembg_python()
+    if not py:
+        return None
+    import subprocess, tempfile
+    data = fetch(cdn_png(src, 1200, 1200))          # the website box is ~1010x673; the CDN never upscales
+    with tempfile.TemporaryDirectory() as tmp:
+        src_path, out_path = os.path.join(tmp, "in.png"), os.path.join(tmp, "out.png")
+        with open(src_path, "wb") as f:
+            f.write(data)
+        env = dict(os.environ, U2NET_HOME=REMBG_MODELS)
+        r = subprocess.run([py, "-I", os.path.join(HERE, "rembg_cut.py"), src_path, out_path],
+                           capture_output=True, text=True, env=env, timeout=600)
+        if r.returncode or not os.path.exists(out_path):
+            print(f"  WARNING: rembg failed ({(r.stderr or '').strip().splitlines()[-1:] or r.returncode}); using the white key")
+            return None
+        with open(out_path, "rb") as f:
+            w, h, rows = decode_png(f.read())
+    # Sanity check against the photo: rembg sometimes takes a light product for background (Korg Phase-8's cream
+    # panel, 2026-11-04: 80% of the product gone). Count the clearly-not-white pixels (min channel < 200, so a
+    # floor shadow or JPEG halo does not count) that rembg made transparent; above 15% the white key is used.
+    _, _, orig = decode_png(data)
+    if len(orig) == h and len(orig[0]) == 4 * w:
+        solid = lost = 0
+        for y in range(0, h, 3):
+            o, r = orig[y], rows[y]
+            for x in range(0, w, 3):
+                if min(o[4 * x], o[4 * x + 1], o[4 * x + 2]) < 200:
+                    solid += 1
+                    lost += r[4 * x + 3] < 128
+        if solid and lost > 0.15 * solid:
+            print(f"  note: rembg dropped {100 * lost // solid}% of the product; using the white key for this photo")
+            return None
+        # rembg also takes some enclosed white PARTS for background (Korg Kronos: patches of the white keys). The white
+        # key keeps an enclosed white region unless it is a compact gap ringed by a dark product (the Shure's yoke),
+        # so where the key keeps a near-white pixel that rembg dropped, the photo's pixel is put back.
+        kw, kh, keyed = w, h, [bytearray(r) for r in orig]
+        key_white(kw, kh, keyed)
+        # Only ENCLOSED white (not reachable from the photo's border through near-white pixels, like a key between
+        # black keys), in patches bigger than specks: a floor-reflection line or JPEG specks along the Shure's
+        # outline connect to the backdrop and stay out.
+        lit = lambda x, y: min(orig[y][4 * x], orig[y][4 * x + 1], orig[y][4 * x + 2]) >= 240
+        outside = bytearray(w * h)
+        q = deque()
+        for x in range(w):
+            for y in (0, h - 1):
+                if lit(x, y) and not outside[y * w + x]:
+                    outside[y * w + x] = 1
+                    q.append((x, y))
+        for y in range(h):
+            for x in (0, w - 1):
+                if lit(x, y) and not outside[y * w + x]:
+                    outside[y * w + x] = 1
+                    q.append((x, y))
+        while q:
+            x, y = q.popleft()
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h and not outside[ny * w + nx] and lit(nx, ny):
+                    outside[ny * w + nx] = 1
+                    q.append((nx, ny))
+        cand = bytearray(w * h)
+        for y in range(h):
+            k, r = keyed[y], rows[y]
+            for x in range(w):
+                if k[4 * x + 3] > 128 and r[4 * x + 3] < 128 and lit(x, y) and not outside[y * w + x]:
+                    cand[y * w + x] = 1
+        restored, min_px = 0, max(40, w * h // 4000)
+        for i in range(w * h):
+            if cand[i] != 1:
+                continue
+            comp, q, cand[i] = [], deque([i]), 2
+            while q:
+                j = q.popleft()
+                comp.append(j)
+                x, y = j % w, j // w
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if 0 <= nx < w and 0 <= ny < h and cand[ny * w + nx] == 1:
+                        cand[ny * w + nx] = 2
+                        q.append(ny * w + nx)
+            if len(comp) >= min_px:
+                for j in comp:
+                    x, y = j % w, j // w
+                    rows[y][4 * x:4 * x + 4] = keyed[y][4 * x:4 * x + 4]
+                restored += len(comp)
+        if restored > 0.002 * w * h:
+            print(f"  note: rembg cut-out: {restored} px of white product parts restored from the white key")
+    box = bbox_alpha(w, h, rows, threshold=24)
+    return crop(rows, box) if box else None
+
+
 def fetch_product_cutout(src, box_w, box_h):
-    """Product photo fitted inside the box, keyed off its white background, trimmed (see fetch_fit_trim)."""
+    """Product photo fitted inside the box with its background removed: rembg first (Igor, 2026-11-04, after the
+    Shure SM7B kept a halo and a floor shadow), the stdlib white key (fetch_fit_trim) when rembg is unavailable.
+    MOOG_CUTOUT=key forces the white key."""
+    if os.environ.get("MOOG_CUTOUT", "rembg") != "key":
+        try:
+            result = rembg_cutout(src, box_w, box_h)
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise BannerError(f"product photo could not be fetched ({type(e).__name__}: {str(e)[:80]})") from e
+        if result:
+            return result
     return fetch_fit_trim(src, box_w, box_h)
 
 
