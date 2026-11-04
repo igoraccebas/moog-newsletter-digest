@@ -426,6 +426,61 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
                         and lum(nx, ny) >= 205 and neutral(nx, ny) and abs(lum(nx, ny) - m) <= 6):
                     seen[ny * w + nx] = 1
                     rows[ny][4 * nx + 3] = 0
+
+        # Soft contact shadow / reflection right under a rack unit (SSL 18, 2026-11-04: a 175-250 neutral ramp a few
+        # rows tall, too steep for the <= 6 rule above). Below the body only: fade neutral light pixels out by their
+        # brightness, so the shadow's dark core keeps a little density and nothing reads as a grey shelf.
+        # The body's bottom is found on dark rows here (lum < 150): the shadow's own 160-200 rows count as "solid"
+        # for floor_y above and would otherwise hide it.
+        shadow_y = 0
+        for y in range(h):
+            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 150) >= 0.5 * body_w:
+                shadow_y = y + 1
+        # The strip runs past the unit's ends too, level with its bottom rows, so it is flood-filled from the keyed
+        # background through neutral pixels >= 150 in a band starting a little above that bottom; the chassis
+        # (80-90) stops the fill. No dark rows (an all-silver panel) -> nothing to do.
+        if shadow_y:
+            y0 = max(0, shadow_y - max(4, h // 60))
+            q = deque((x, y) for y in range(y0, h) for x in range(w) if rows[y][4 * x + 3] == 0)
+            done = bytearray(w * h)
+            while q:
+                x, y = q.popleft()
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if (0 <= nx < w and y0 <= ny < h and not done[ny * w + nx] and rows[ny][4 * nx + 3]
+                            and neutral(nx, ny) and lum(nx, ny) >= 150):
+                        done[ny * w + nx] = 1
+                        line = rows[ny]
+                        line[4 * nx + 3] = line[4 * nx + 3] * max(0, 250 - lum(nx, ny)) // 300
+                        q.append((nx, ny))
+
+    # White gaps closed in by the product (Shure SM7B: between the yoke, the cable and the body, 2026-11-04) are not
+    # reached from the border. Key an enclosed near-white region only when it is backdrop-pure (mean >= 250,
+    # neutral): a light product panel sits at 200-240 and a white knob or label is tiny, so both are kept.
+    if holes:
+        min_px = max(24, w * h // 4000)
+        for sy in range(h):
+            for sx in range(w):
+                if seen[sy * w + sx] or not light(sx, sy):
+                    continue
+                comp, q2 = [], deque([(sx, sy)])
+                seen[sy * w + sx] = 1
+                while q2:
+                    x, y = q2.popleft()
+                    comp.append((x, y))
+                    for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                        if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
+                            seen[ny * w + nx] = 1
+                            q2.append((nx, ny))
+                if len(comp) < min_px:
+                    continue
+                tot = spread = 0
+                for x, y in comp:
+                    px = rows[y][4 * x:4 * x + 3]
+                    tot += min(px)
+                    spread = max(spread, max(px) - min(px))
+                if tot / len(comp) >= 250 and spread <= 10:
+                    for x, y in comp:
+                        clear(x, y)
                     q.append((nx, ny))
 
     # Backdrop showing through a gap in the product (inside a headband, a handle, a cable loop) is enclosed, so
