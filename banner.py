@@ -34,6 +34,7 @@ LOCAL_LOGOS = {                      # vendors whose brand-collection image is n
     "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
 }
 FORCE_WHITE_LOGOS = {"Tip Top Audio"}   # collection logo has brand colours (dark green) that vanish on the gradients: always white
+SHADOW_PASS = True
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
 WHITE, BLACK, RED = (255, 255, 255), (0, 0, 0), (193, 39, 45)   # #c1272d = sale red
@@ -434,54 +435,33 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
         # for floor_y above and would otherwise hide it.
         shadow_y = 0
         for y in range(h):
-            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 150) >= 0.5 * body_w:
-                shadow_y = y + 1
+            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 150) >= 0.8 * body_w:
+                shadow_y = y + 1          # 80%: a dark chassis edge to edge, not a row of black jacks on a light panel
         # The strip runs past the unit's ends too, level with its bottom rows, so it is flood-filled from the keyed
         # background through neutral pixels >= 150 in a band starting a little above that bottom; the chassis
         # (80-90) stops the fill. No dark rows (an all-silver panel) -> nothing to do.
-        if shadow_y:
-            y0 = max(0, shadow_y - max(4, h // 60))
-            q = deque((x, y) for y in range(y0, h) for x in range(w) if rows[y][4 * x + 3] == 0)
+        # Only when the dark body ends just above the solid silhouette (the gap is the shadow itself). A light
+        # panel with dark parts (Tip Top's silver 248t: black jacks mid-panel) ends far below its last dark row.
+        if shadow_y and SHADOW_PASS and floor_y - shadow_y <= max(6, h // 25):
+            # The strip also runs beside the unit, level with its bottom rows (past the rack ears): those rows are
+            # in the band too, but only left / right of the unit's dark columns.
+            y0, y1 = max(0, shadow_y - max(6, h // 25)), min(h, shadow_y + max(6, h // 25))
+            dark_x = [x for y in range(y0, shadow_y) for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 150]
+            xmin, xmax = (min(dark_x), max(dark_x)) if dark_x else (w, -1)
+            q = deque((x, y) for y in range(y0, y1) for x in range(w) if rows[y][4 * x + 3] == 0)
             done = bytearray(w * h)
             while q:
                 x, y = q.popleft()
                 for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                    if (0 <= nx < w and y0 <= ny < h and not done[ny * w + nx] and rows[ny][4 * nx + 3]
-                            and neutral(nx, ny) and lum(nx, ny) >= 150):
+                    if (0 <= nx < w and y0 <= ny < y1 and not done[ny * w + nx] and rows[ny][4 * nx + 3]
+                            and (ny >= shadow_y or nx < xmin or nx > xmax)
+                            and neutral(nx, ny) and lum(nx, ny) >= 150
+                            # a shadow brightens downwards; a flat light panel edge (Tip Top's silver) does not
+                            and (ny < shadow_y or lum(nx, ny) >= 240 or (ny + 1 < h and lum(nx, ny + 1) - lum(nx, ny) >= 3))):
                         done[ny * w + nx] = 1
                         line = rows[ny]
                         line[4 * nx + 3] = line[4 * nx + 3] * max(0, 250 - lum(nx, ny)) // 300
                         q.append((nx, ny))
-
-    # White gaps closed in by the product (Shure SM7B: between the yoke, the cable and the body, 2026-11-04) are not
-    # reached from the border. Key an enclosed near-white region only when it is backdrop-pure (mean >= 250,
-    # neutral): a light product panel sits at 200-240 and a white knob or label is tiny, so both are kept.
-    if holes:
-        min_px = max(24, w * h // 4000)
-        for sy in range(h):
-            for sx in range(w):
-                if seen[sy * w + sx] or not light(sx, sy):
-                    continue
-                comp, q2 = [], deque([(sx, sy)])
-                seen[sy * w + sx] = 1
-                while q2:
-                    x, y = q2.popleft()
-                    comp.append((x, y))
-                    for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                        if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
-                            seen[ny * w + nx] = 1
-                            q2.append((nx, ny))
-                if len(comp) < min_px:
-                    continue
-                tot = spread = 0
-                for x, y in comp:
-                    px = rows[y][4 * x:4 * x + 3]
-                    tot += min(px)
-                    spread = max(spread, max(px) - min(px))
-                if tot / len(comp) >= 250 and spread <= 10:
-                    for x, y in comp:
-                        clear(x, y)
-                    q.append((nx, ny))
 
     # Backdrop showing through a gap in the product (inside a headband, a handle, a cable loop) is enclosed, so
     # the pass above misses it. Key an enclosed region too when it is almost all pure backdrop white (>= hi,
@@ -490,6 +470,22 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
     if not holes:
         return rows
     min_area = max(200, int(0.004 * w * h))
+
+    def dark_ring(region):
+        # backdrop-pure, roughly compact (long side <= 3x the short one) and ringed by dark pixels. Shapes ruled
+        # out: a white key on a black keyboard (Kronos, 6x48), a hairline on a panel (Phase-8, 340x1).
+        if sum(min(rows[y][4 * x:4 * x + 3]) for x, y in region) < 251.5 * len(region):
+            return False
+        xs, ys = [x for x, _ in region], [y for _, y in region]
+        bw, bh = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+        if min(bw, bh) < 6 or max(bw, bh) > 3 * min(bw, bh):
+            return False
+        inside, ring = set(region), []
+        for x, y in region:
+            for nx, ny in ((x - 2, y), (x + 2, y), (x, y - 2), (x, y + 2)):
+                if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in inside:
+                    ring.append(min(rows[ny][4 * nx:4 * nx + 3]))
+        return bool(ring) and sum(ring) / len(ring) < 175
     for sy in range(h):
         for sx in range(w):
             if seen[sy * w + sx] or not light(sx, sy):
@@ -507,6 +503,12 @@ def key_white(w, h, rows, lo=240, hi=252, holes=True):
                         seen[ny * w + nx] = 1
                         stack.append((nx, ny))
             if len(region) >= min_area and pure >= 0.9 * len(region):
+                for x, y in region:
+                    clear(x, y)
+            elif len(region) >= max(24, w * h // 4000) and dark_ring(region):
+                # A small gap in a DARK product (Shure SM7B: between the yoke, the cable and the body, 2026-11-04):
+                # backdrop white (mean >= 250) ringed by dark pixels. White buttons and labels sit on light panels
+                # (Tip Top's silver, Korg Phase-8's cream) and are kept.
                 for x, y in region:
                     clear(x, y)
     return rows
