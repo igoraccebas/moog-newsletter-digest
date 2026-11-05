@@ -1344,8 +1344,37 @@ def _rembg_full(src):
                     x, y = j % w, j // w
                     rows[y][4 * x:4 * x + 4] = keyed[y][4 * x:4 * x + 4]
                 restored += len(comp)
+        # And dark product rembg trimmed off (SSL 18, 2026-11-05: the dark strip along the bottom of the chassis; Kronos:
+        # the keyboard's bottom edge). A backdrop is never dark: a patch of dropped pixels the key keeps whose mean
+        # brightness is below 120 is product. What rembg rightly removes on the Shure (halo, floor shadow) averages
+        # 170-250.
+        drop = bytearray(w * h)
+        for y in range(h):
+            k, r = keyed[y], rows[y]
+            for x in range(w):
+                if k[4 * x + 3] > 128 and r[4 * x + 3] < 128:
+                    drop[y * w + x] = 1
+        for i in range(w * h):
+            if drop[i] != 1:
+                continue
+            comp, q, drop[i] = [], deque([i]), 2
+            tot = 0
+            while q:
+                j = q.popleft()
+                comp.append(j)
+                x, y = j % w, j // w
+                tot += min(orig[y][4 * x], orig[y][4 * x + 1], orig[y][4 * x + 2])
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if 0 <= nx < w and 0 <= ny < h and drop[ny * w + nx] == 1:
+                        drop[ny * w + nx] = 2
+                        q.append(ny * w + nx)
+            if len(comp) >= min_px and tot < 120 * len(comp):
+                for j in comp:
+                    x, y = j % w, j // w
+                    rows[y][4 * x:4 * x + 4] = keyed[y][4 * x:4 * x + 4]
+                restored += len(comp)
         if restored > 0.002 * w * h:
-            print(f"  note: rembg cut-out: {restored} px of white product parts restored from the white key")
+            print(f"  note: rembg cut-out: {restored} px of product restored from the white key")
     box = bbox_alpha(w, h, rows, threshold=24)
     return crop(rows, box) if box else None
 
