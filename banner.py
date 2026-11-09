@@ -32,6 +32,8 @@ LOGO_SIZE_OVERRIDES = {              # a vendor whose mark reads small at the st
 }
 LOCAL_LOGOS = {                      # vendors whose brand-collection image is not a usable logo: white mark kept in assets/logos
     "Ortofon": "assets/logos/ortofon-white.png",   # official SVG from Igor, 2026-10-27, rendered white on transparent
+    "iZotope": "assets/logos/izotope-white.png",   # official SVG from Igor, 2026-11-09 (mark + wordmark), white on transparent
+    "GForce": "assets/logos/gforce-white.png",     # GF logo from Igor, 2026-11-09, white on transparent
 }
 DISC = 168                           # discount disc diameter
 GAP = 18                             # bottom block gap
