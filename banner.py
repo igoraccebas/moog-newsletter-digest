@@ -1182,8 +1182,96 @@ def fetch_logo(vendor, cache, scale_box=None):
     return result
 
 
+POOF_API = "https://api.poof.bg/v1/remove"   # AI background removal (Igor, 2026-11-11); key in env POOF_API_KEY
+_poof_cache = {}                             # image src -> (w, h, rows) or the exception, once per run
+
+
+def _multipart(fields):
+    boundary = "----moogdigest" + os.urandom(8).hex()
+    body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                    for k, v in fields.items()) + f"--{boundary}--\r\n".encode()
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+def poof_remove(src, width, height, key, attempts=4):
+    """Poof (poof.bg) removes the background of the image at `src` (Poof fetches the URL itself), crops to the
+    subject with no padding and fits it inside width x height: a transparent 8-bit PNG -> (w, h, rows).
+    1 credit per successful call; 429 (the free plan allows 4 requests a minute) and 5xx are retried."""
+    url = src + ("&" if "?" in src else "?") + "width=2048"          # Shopify CDN: no point sending more pixels
+    body, ctype = _multipart({"url": url, "format": "png", "channels": "rgba", "crop": "true", "padding": "0%",
+                              "width": width, "height": height, "fit": "contain"})
+    for n in range(attempts):
+        req = urllib.request.Request(POOF_API, data=body, method="POST", headers={
+            "x-api-key": key, "content-type": ctype, "accept": "image/png", "User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return decode_png(r.read())
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            if (e.code != 429 and e.code < 500) or n == attempts - 1:
+                raise RuntimeError(f"Poof HTTP {e.code}: {detail}") from None
+            wait = e.headers.get("Retry-After", "")
+            time.sleep(min(float(wait), 65) if wait.replace(".", "", 1).isdigit() else (16 if e.code == 429 else 3) * (n + 1))
+        except (urllib.error.URLError, TimeoutError) as e:
+            if "Tunnel connection failed" in str(e) or n == attempts - 1:
+                raise
+            time.sleep(3 * (n + 1))
+
+
+def fit_down(w, h, rows, box_w, box_h):
+    """Trim transparent margins, then area-average down (alpha-weighted, so no dark fringe from transparent
+    pixels) to fit inside box_w x box_h. Never enlarges."""
+    box = bbox_alpha(w, h, rows)
+    if not box:
+        return None
+    w, h, rows = crop(rows, box)
+    scale = min(box_w / w, box_h / h, 1.0)
+    nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+    if (nw, nh) == (w, h):
+        return w, h, rows
+    out = []
+    for y in range(nh):
+        ya, yb = y * h // nh, max(y * h // nh + 1, (y + 1) * h // nh)
+        line = bytearray(4 * nw)
+        for x in range(nw):
+            xa, xb = x * w // nw, max(x * w // nw + 1, (x + 1) * w // nw)
+            r = g = b = a = 0
+            for j in range(ya, yb):
+                src = rows[j]
+                for i in range(4 * xa, 4 * xb, 4):
+                    pa = src[i + 3]
+                    r += src[i] * pa
+                    g += src[i + 1] * pa
+                    b += src[i + 2] * pa
+                    a += pa
+            n = (yb - ya) * (xb - xa)
+            if a:
+                line[4 * x:4 * x + 4] = bytes((r // a, g // a, b // a, a // n))
+        out.append(line)
+    return nw, nh, out
+
+
 def fetch_product_cutout(src, box_w, box_h):
-    """Product photo fitted inside the box, keyed off its white background, trimmed (see fetch_fit_trim)."""
+    """Product photo fitted inside the box with its background removed. With POOF_API_KEY set the cut-out comes
+    from Poof, fetched once per image at website-banner size and scaled down for the e-mail banner; if Poof
+    fails the run prints a WARNING and falls back to the built-in white key (see fetch_fit_trim / key_white),
+    so an outage never blocks a draft. Without the key: the built-in key only."""
+    key = os.environ.get("POOF_API_KEY")
+    if key:
+        if src not in _poof_cache:
+            _, _, bw, bh = _web_product_box()
+            try:
+                _poof_cache[src] = poof_remove(src, max(bw, box_w), max(bh, box_h), key)
+            except Exception as e:
+                _poof_cache[src] = e
+                print(f"  WARNING: Poof background removal failed for {src.rsplit('/', 1)[-1][:60]} "
+                      f"({type(e).__name__}: {str(e)[:160]}); using the built-in cut-out")
+        hit = _poof_cache[src]
+        if not isinstance(hit, Exception):
+            cut = fit_down(*hit, box_w, box_h)
+            if cut:
+                return cut
+            print(f"  WARNING: Poof returned an empty cut-out for {src.rsplit('/', 1)[-1][:60]}; using the built-in cut-out")
     return fetch_fit_trim(src, box_w, box_h)
 
 

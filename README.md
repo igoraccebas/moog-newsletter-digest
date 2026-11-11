@@ -121,7 +121,8 @@ New Releases (`add_to_collection` is null in the manifest).
   conversion, then a border-connected white key, so light front panels stay solid; since 2026-11-11 the key stops
   at the backdrop level (≥250) plus a 2px fringe so near-white parts like clear Shure shells survive, and grey
   drop-shadow halos and floor/contact shadows are removed when they darken steadily away from the backdrop —
-  see `key_white()` in banner.py); a red disc rotated −8° with
+  see `key_white()` in banner.py; with `POOF_API_KEY` set the cut-out comes from the Poof AI background remover
+  instead — see "Product cut-outs: Poof" below); a red disc rotated −8° with
   "NN% / OFF", stuck to the product's top-left corner (never up in the logo row); the headline and sub-line
   from `split_title()`; sale price with the struck regular price; a black SHOP HERE button. Baked images look
   the same in light and dark mode, which is why the layout is an image. The design's grain overlay is left out
@@ -147,6 +148,17 @@ Run by hand: `python3 digest.py sale --from-json out/sale.json --extras out/extr
 [--font-dir DIR]` (local sample: out/sale-test.json, not in the repo). Output: `out/sale-<date>.html/.json` and
 `out/sale-<date>-<n>-<slug>.png` per deal. Every card carries `discount_pct` (also in the other modes, null when
 there is no compare-at), and in sale mode `headline`, `subline`, `banner`.
+
+## Product cut-outs: Poof (since 2026-11-11)
+
+All banners (e-mail 4A/4B, website 2A/3A) cut the product out of its photo. With env `POOF_API_KEY` set (cloud
+environment secret) `banner.fetch_product_cutout()` asks Poof (https://poof.bg, `POST https://api.poof.bg/v1/remove`,
+header `x-api-key`) for it: Poof fetches the Shopify image URL itself, crops to the subject and returns a transparent
+PNG at website-banner size, which is reused, scaled down, for the e-mail banner — **1 credit per product per run**.
+Free plan: 100 credits a month, 4 requests a minute (429s are retried with Retry-After); paid plans from $9 / 2,000.
+Logos never go to Poof. If Poof fails (bad key, no credits, outage, egress) the run prints
+`WARNING: Poof background removal failed for <image> (…); using the built-in cut-out` and uses `key_white()`, so a
+draft is never blocked by it. Without the key only the built-in cut-out is used. Network: `api.poof.bg` must be allowed.
 
 ## Website banners — banner scheduling app (all three e-mails, since 2026-10-23)
 
