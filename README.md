@@ -118,7 +118,10 @@ New Releases (`add_to_collection` is null in the manifest).
   inner detail (dark strokes → white, light details → see-through), coloured logos keep their colours; a
   collection image that is a photo rather than a logo, or a brand without a collection, gets the vendor name
   in white type instead; the **product cut out of its white studio background** (Shopify CDN `format=png`
-  conversion, then a border-connected white key, so light front panels stay solid); a red disc rotated −8° with
+  conversion, then a border-connected white key, so light front panels stay solid; since 2026-11-11 the key stops
+  at the backdrop level (≥250) plus a 2px fringe so near-white parts like clear Shure shells survive, and grey
+  drop-shadow halos and floor/contact shadows are removed when they darken steadily away from the backdrop —
+  see `key_white()` in banner.py); a red disc rotated −8° with
   "NN% / OFF", stuck to the product's top-left corner (never up in the logo row); the headline and sub-line
   from `split_title()`; sale price with the struck regular price; a black SHOP HERE button. Baked images look
   the same in light and dark mode, which is why the layout is an image. The design's grain overlay is left out
@@ -135,6 +138,8 @@ New Releases (`add_to_collection` is null in the manifest).
   Transient 429/5xx/timeouts are retried 3 times first. Only two cases still fall back to the vendor name in white
   type: no brand collection (404), or a collection image that is a photo rather than a logo on white. Fix the latter
   by uploading a logo-on-white PNG as that collection's image in Shopify (done for Universal Audio on 2026-09-23).
+  A brand collection with no image uses `assets/logos/<vendor-handle>.png` (black on white) when there is one:
+  Oberheim, and RCF since 2026-11-11 (Igor's file; the RCF collection has no image).
 - Subject: "Deals at Moog Audio: <A>, <B> + N more" (priciest first, like the picks). Preview: "N deals live
   now at Moog Audio. FREE SHIPPING on most orders over 199$". Campaign name "Deals · <Mon D> · <h>pm".
 

@@ -354,105 +354,160 @@ def encode_jpeg(w, h, rows, quality=88):
 
 
 # -------------------------------------------------------------------------------------------- compositing ----
+# Product-photo keying (key_white, holes=True); measured on the 2026-11-11 Deals products and the earlier test set
+RAMP = 2              # px of anti-aliased 240-249 fringe removed next to the backdrop
+HALO_STEP = 7         # max darkening per px of a drop-shadow halo (Soundcraft Notepad-5: 1-7)
+HALO_SMOOTH = 12      # max spread in a halo pixel's 3x3 neighbourhood (textured clear plastic is rougher)
+HALO_REACH = 0.14     # how far a halo may extend from the backdrop, as a share of the image's short side
+FLOOR_STEP = 26       # max darkening per px of a floor / contact shadow below the product (Focal Sub One: up to 24)
+FLOOR_MIN = 80        # shadows are lighter than this; darker neutral pixels (feet, black cabinets) stay
+SOLID_LUM = 75        # a product row is solid where pixels are darker than this or coloured (grey shadow is neither)
 def key_white(w, h, rows, lo=240, hi=252, holes=True):
-    """Remove a white studio background: near-white pixels that are CONNECTED to the image border become
-    transparent (soft ramp between lo and hi, so PNGs converted from JPEG lose their off-white halo too).
-    White areas enclosed by the product (a light front panel, a white knob) are left alone, unlike a plain
-    chroma key that would eat them. Thresholds measured on Moog studio shots (2026-09-17): the backdrop is a
-    pure 255, JPEG ringing sits at 245-254, light product panels at 200-240 -> lo=240 keeps panels solid."""
-    seen = bytearray(w * h)
-    q = deque()
+    """Remove a white studio background from a product photo (holes=True) or a logo (holes=False).
 
-    def light(x, y):
-        i = 4 * x
-        line = rows[y]
-        return min(line[i], line[i + 1], line[i + 2]) >= lo
+    Logos keep the original rule: near-white pixels (>= lo) CONNECTED to the image border become transparent,
+    with a soft ramp between lo and hi so JPEG ringing goes too; white inside the mark stays.
 
-    for x in range(w):
-        for y in (0, h - 1):
-            if not seen[y * w + x] and light(x, y):
-                seen[y * w + x] = 1
-                q.append((x, y))
-    for y in range(h):
-        for x in (0, w - 1):
-            if not seen[y * w + x] and light(x, y):
-                seen[y * w + x] = 1
-                q.append((x, y))
-    def clear(x, y):
+    Product photos (rewritten 2026-11-11 after the Deals run: the clear Shure SE215 shells were eaten, the
+    Soundcraft Notepad-5 kept a grey halo, the Focal Sub One a floor shadow):
+      1. backdrop: pixels at the backdrop level (>= `core`, measured from the border; 250 on a pure-white shot)
+         connected to the border. Stopping at 250 instead of 240 keeps near-white product parts (clear
+         plastic, light panels at 240-249) that touch the backdrop.
+      2. fringe: at most RAMP px of the 240-249 anti-aliased / JPEG-ringing edge next to the backdrop, ramped.
+      3. shadows, grown from the backdrop through NEUTRAL grey pixels that get steadily DARKER away from it
+         (a light product part fades the other way, or is textured):
+         - all around the product (a soft drop-shadow halo): steps of at most HALO_STEP levels, smooth 3x3
+           neighbourhood, within HALO_REACH of the backdrop;
+         - below the product body (floor and contact shadows): steeper steps (FLOOR_STEP), down to FLOOR_MIN,
+           also seeded from the image border and from long runs of pure backdrop seen between the feet.
+         The product's body ends at its last row that is solid (dark or coloured) across half its width;
+         grey shadow rows do not count, so a contact shadow spanning the full width is not taken for product.
+      4. enclosed backdrop showing through a gap (inside a handle, a cable loop): an enclosed region of light
+         pixels that is almost all pure white and large enough that a white knob or label does not qualify."""
+    def lum(x, y):
         line = rows[y]
-        m = min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
+        return min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
+
+    def neutral(x, y):
+        line = rows[y]
+        return max(line[4 * x:4 * x + 3]) - min(line[4 * x:4 * x + 3]) <= 10
+
+    def ramp_alpha(x, y):
+        line = rows[y]
+        m = lum(x, y)
         line[4 * x + 3] = 0 if m >= hi else int(line[4 * x + 3] * (hi - m) / (hi - lo))
+
+    border = [(x, y) for x in range(w) for y in (0, h - 1)] + [(x, y) for y in range(1, h - 1) for x in (0, w - 1)]
+    if holes:
+        light = sorted(lum(x, y) for x, y in border if lum(x, y) >= lo)
+        core = min(250, light[len(light) // 2] - 3) if light else 250    # an off-white backdrop (246) still keys
+    else:
+        core = lo
+
+    # 1. backdrop connected to the border
+    seen = bytearray(w * h)          # 1 backdrop, 2 fringe, 3 shadow
+    q = deque()
+    for x, y in border:
+        if not seen[y * w + x] and lum(x, y) >= core:
+            seen[y * w + x] = 1
+            q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        if holes:
+            rows[y][4 * x + 3] = 0
+        else:
+            ramp_alpha(x, y)
+        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and lum(nx, ny) >= core:
+                seen[ny * w + nx] = 1
+                q.append((nx, ny))
+    if not holes:
+        return rows
+
+    # 2. the anti-aliased fringe, RAMP px deep at most
+    front = [(i % w, i // w) for i in range(w * h) if seen[i]]
+    for _ in range(RAMP):
+        nxt = []
+        for x, y in front:
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and lum(nx, ny) >= lo:
+                    seen[ny * w + nx] = 2
+                    ramp_alpha(nx, ny)
+                    nxt.append((nx, ny))
+        front = nxt
+
+    # 3. shadows
+    opaque_x = [x for y in range(h) for x in range(w) if rows[y][4 * x + 3] > 0]
+    body_w = (max(opaque_x) - min(opaque_x) + 1) if opaque_x else 1
+    floor_y = 0
+    for y in range(h):
+        if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and (lum(x, y) < SOLID_LUM or not neutral(x, y))) >= 0.5 * body_w:
+            floor_y = y + 1
+    reach = max(6, int(HALO_REACH * min(w, h)))
+    dist = bytearray(w * h)          # distance from the backdrop for the halo, capped at 255
+
+    def take(x, y, d):
+        i = y * w + x
+        seen[i] = 3
+        rows[y][4 * x + 3] = 0
+        dist[i] = min(d, 255)
+        q.append((x, y))
+
+    q = deque((i % w, i // w) for i in range(w * h) if seen[i] == 1)
+    for y in range(floor_y, h):      # floor seeds: border pixels below the body, backdrop runs between the feet
+        for x in ((0, w - 1) if y < h - 1 else range(w)):
+            if not seen[y * w + x] and lum(x, y) >= FLOOR_MIN and neutral(x, y):
+                take(x, y, 0)
+        x = 0
+        while x < w:
+            x1 = x
+            while x1 < w and not seen[y * w + x1] and lum(x1, y) >= 253:
+                x1 += 1
+            if x1 - x >= 0.15 * body_w:
+                for xx in range(x, x1):
+                    take(xx, y, 0)
+            x = x1 + 1
+
+    def smooth(x, y):
+        v = [lum(xx, yy) for yy in range(max(0, y - 1), min(h, y + 2)) for xx in range(max(0, x - 1), min(w, x + 2))]
+        return max(v) - min(v) <= HALO_SMOOTH
 
     while q:
         x, y = q.popleft()
-        clear(x, y)
+        m, d = lum(x, y), dist[y * w + x]
         for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-            if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
-                seen[ny * w + nx] = 1
-                q.append((nx, ny))
+            if not (0 <= nx < w and 0 <= ny < h) or seen[ny * w + nx] not in (0, 2):
+                continue
+            mm = lum(nx, ny)
+            if mm < FLOOR_MIN or not neutral(nx, ny):
+                continue
+            if ny >= floor_y:
+                ok = m - FLOOR_STEP <= mm <= m + 2
+            else:
+                ok = m - HALO_STEP <= mm <= m + 1 and d < reach and smooth(nx, ny)
+            if ok:
+                take(nx, ny, d + 1)
 
-    # A studio floor or soft shadow is not pure white (Alesis: a 226-245 grey gradient under the unit, which `lo`
-    # keeps). Grow the keyed area through neutral, bright pixels that change by <= 6 levels from their neighbour: a
-    # smooth floor qualifies, the product's edge (a jump of 50+) and its own light panels (not neutral/bright, or
-    # separated from the floor by an edge) do not. Products only: a logo's white interior must stay.
-    if holes:
-        q = deque((x, y) for y in range(h) for x in range(w) if seen[y * w + x] and rows[y][4 * x + 3] == 0)
-
-        def lum(x, y):
-            line = rows[y]
-            return min(line[4 * x], line[4 * x + 1], line[4 * x + 2])
-
-        # Only below the product's body: under its last row that is solid (opaque and not floor-coloured) across
-        # half its width. A floor row is floor-coloured apart from what stands on it (Alesis: four jacks, 37% of
-        # the width), a product's bottom edge is solid whatever its colour (the cream Numark Party Mix ends in a
-        # darker full-width rim, 90%; its soft cream sides would otherwise be eaten), and a drop shadow under an
-        # amp counts as product too, which keeps the Moog's white corner caps above it.
-        seen_px = [x for y in range(h) for x in range(w) if rows[y][4 * x + 3] > 0]
-        body_w = (max(seen_px) - min(seen_px) + 1) if seen_px else 1
-        floor_y = 0
-        for y in range(h):
-            if sum(1 for x in range(w) if rows[y][4 * x + 3] > 128 and lum(x, y) < 205) >= 0.5 * body_w:
-                floor_y = y + 1
-
-        def neutral(x, y):
-            line = rows[y]
-            return max(line[4 * x:4 * x + 3]) - min(line[4 * x:4 * x + 3]) <= 8
-        while q:
-            x, y = q.popleft()
-            m = lum(x, y)
-            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                if (0 <= nx < w and floor_y <= ny < h and rows[ny][4 * nx + 3] != 0     # includes the first pass's soft ramp
-                        and lum(nx, ny) >= 205 and neutral(nx, ny) and abs(lum(nx, ny) - m) <= 6):
-                    seen[ny * w + nx] = 1
-                    rows[ny][4 * nx + 3] = 0
-                    q.append((nx, ny))
-
-    # Backdrop showing through a gap in the product (inside a headband, a handle, a cable loop) is enclosed, so
-    # the pass above misses it. Key an enclosed region too when it is almost all pure backdrop white (>= hi,
-    # where panels are 200-240) and large enough that a white knob or printed label does not qualify.
-    # Off for logos: the white inside a mark (UA's diamond) is part of the design and logo_treatment needs it.
-    if not holes:
-        return rows
+    # 4. enclosed backdrop
     min_area = max(200, int(0.004 * w * h))
     for sy in range(h):
         for sx in range(w):
-            if seen[sy * w + sx] or not light(sx, sy):
+            if seen[sy * w + sx] or lum(sx, sy) < lo:
                 continue
             seen[sy * w + sx] = 1
             region, pure, stack = [], 0, [(sx, sy)]
             while stack:
                 x, y = stack.pop()
                 region.append((x, y))
-                line = rows[y]
-                if min(line[4 * x], line[4 * x + 1], line[4 * x + 2]) >= hi:
+                if lum(x, y) >= hi:
                     pure += 1
                 for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                    if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and light(nx, ny):
+                    if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and lum(nx, ny) >= lo:
                         seen[ny * w + nx] = 1
                         stack.append((nx, ny))
             if len(region) >= min_area and pure >= 0.9 * len(region):
                 for x, y in region:
-                    clear(x, y)
+                    ramp_alpha(x, y)
     return rows
 
 
